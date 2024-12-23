@@ -4,6 +4,7 @@ export const useSpeechRecognition = ({ onResult }: { onResult: (transcript: stri
     const [isListening, setIsListening] = useState(false);
     const [transcript, setTranscript] = useState("");
     const [error, setError] = useState(null);
+    const [finalTranscript, setFinalTranscript] = useState("");
 
     const speechRecognitionRef = useRef<any>(null);
 
@@ -16,14 +17,19 @@ export const useSpeechRecognition = ({ onResult }: { onResult: (transcript: stri
 
         speechRecognitionRef.current.onresult = (event: any) => {
             const results = Array.from(event.results);
-            const latestResult: any = results[results.length - 1];
-            const transcript = latestResult[0].transcript;
+            let interimTranscript = '';
+            
+            results.forEach((result: any) => {
+                if (result.isFinal) {
+                    setFinalTranscript(prev => prev + ' ' + result[0].transcript);
+                } else {
+                    interimTranscript += result[0].transcript;
+                }
+            });
 
-            setTranscript(transcript);
-
-            if (onResult && latestResult.isFinal) {
-                onResult(transcript);
-            }
+            const fullTranscript = (finalTranscript + ' ' + interimTranscript).trim();
+            setTranscript(fullTranscript);
+            onResult(fullTranscript);
         };
 
         speechRecognitionRef.current.onerror = (event: any) => {
@@ -32,6 +38,8 @@ export const useSpeechRecognition = ({ onResult }: { onResult: (transcript: stri
     }
 
     const startListening = () => {
+        setFinalTranscript('');
+        setTranscript('');
         speechRecognitionRef.current.start();
         setIsListening(true);
     };

@@ -9,6 +9,7 @@ import { MutableRefObject, useEffect, useRef, useState } from "react";
 import { Note, NoteModel } from "./Note";
 
 import { Button } from "@/components/ui/button";
+import SignOutButton from "./SignOutButton";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 
 export default function NoteView() {
@@ -252,6 +253,7 @@ export default function NoteView() {
               ))}
             </div>
           </div>
+          <SignOutButton />
         </div>
       )}
 
@@ -269,6 +271,7 @@ export default function NoteView() {
           
             </div>
             <Note noteRef={currentNote} onResult={updateNote} />
+        
           </div>
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-center p-20 bg-gray-900">

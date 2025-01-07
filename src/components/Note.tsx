@@ -18,6 +18,7 @@ export function Note({ noteRef, onResult }: NoteProps) {
   const [transcriptOutput, setTranscriptOutput] = useState<string>("");
   const [diarizationResults, setDiarizationResults] = useState<any[]>([]);
   const [localAudioBlob, setLocalAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Speech recognition setup
@@ -32,7 +33,7 @@ export function Note({ noteRef, onResult }: NoteProps) {
   });
 
   // Voice recorder setup
-  const { isRecording, audioURL, audioBlob, startRecording, stopRecording } =
+  const { isRecording, audioBlob, startRecording, stopRecording } =
     useVoiceRecorder();
 
   // Diarization setup
@@ -53,26 +54,65 @@ export function Note({ noteRef, onResult }: NoteProps) {
     },
   });
 
-  // Reset state when noteRef changes
+  // Load note data when switching notes
   useEffect(() => {
-    setTranscriptOutput("");
-    setDiarizationResults(noteRef.current.diarizationResults || []);
-    if (fileRef.current) {
-      fileRef.current.value = "";
-    }
-    stopRecording();
-    setLocalAudioBlob(null);
-  }, [noteRef.current]);
+    const loadNoteData = () => {
+      // Load transcript
+      setTranscriptOutput(noteRef.current.transcript || "");
 
-  // Update audio blob when it changes
+      // Load diarization results
+      setDiarizationResults(noteRef.current.diarizationResults || []);
+
+      // Load audio state
+      if (noteRef.current.audio) {
+        const newUrl = URL.createObjectURL(noteRef.current.audio);
+        setLocalAudioBlob(noteRef.current.audio);
+        setAudioUrl(newUrl);
+      } else {
+        setLocalAudioBlob(null);
+        setAudioUrl(null);
+      }
+
+      // Reset file input
+      if (fileRef.current) {
+        fileRef.current.value = "";
+      }
+
+      // Stop any ongoing recording
+      stopRecording();
+    };
+
+    // Cleanup previous audio URL
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
+    }
+
+    loadNoteData();
+  }, [noteRef.current.id]); // Only reload when switching notes
+
+  // Update audio state when recording changes
   useEffect(() => {
-    if (audioBlob && audioBlob !== noteRef.current?.audio) {
+    if (audioBlob) {
+      const newUrl = URL.createObjectURL(audioBlob);
       setLocalAudioBlob(audioBlob);
+      setAudioUrl(newUrl);
+
       if (noteRef.current) {
         noteRef.current.audio = audioBlob;
+        noteRef.current.url = newUrl;
+        onResult?.(noteRef.current);
       }
     }
   }, [audioBlob]);
+
+  // Cleanup function for audio resources
+  useEffect(() => {
+    return () => {
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+    };
+  }, []);
 
   const handleFileUpload = async (file: File) => {
     try {
@@ -96,10 +136,13 @@ export function Note({ noteRef, onResult }: NoteProps) {
       await stopListening();
       await stopRecording();
 
-      if (noteRef.current) {
+      if (noteRef.current && audioBlob) {
+        const newUrl = URL.createObjectURL(audioBlob);
+        setAudioUrl(newUrl);
+
         noteRef.current.transcript = transcriptOutput.trim();
         noteRef.current.audio = audioBlob;
-        noteRef.current.url = audioURL;
+        noteRef.current.url = newUrl;
         onResult?.(noteRef.current);
       }
     } catch (err) {
@@ -112,7 +155,6 @@ export function Note({ noteRef, onResult }: NoteProps) {
       await runDiarization(localAudioBlob);
     }
   };
-
   return (
     <div className="flex flex-col w-full gap-8 p-6 bg-neutral-900 rounded-lg shadow-lg">
       <div className="text-center mb-4">
@@ -129,12 +171,13 @@ export function Note({ noteRef, onResult }: NoteProps) {
       <AudioRecorder
         isListening={isListening}
         isRecording={isRecording}
-        audioURL={audioURL}
+        audioURL={audioUrl} 
         onStart={handleStart}
         onStop={handleStop}
         onDiarize={handleDiarize}
-        diarizationStatus={diarizationStatus as "idle" | "diarizing" | "error"}
+        diarizationStatus={diarizationStatus}
         localAudioBlob={localAudioBlob}
+        noteId={noteRef.current.id}
       />
 
       {transcriptOutput && (
@@ -146,10 +189,10 @@ export function Note({ noteRef, onResult }: NoteProps) {
       )}
 
       <FileUploader
-      onFileUpload={handleFileUpload}
-      isRecording={isRecording}
-      localAudioBlob={localAudioBlob}
-      fileRef={fileRef}
+        onFileUpload={handleFileUpload}
+        isRecording={isRecording}
+        localAudioBlob={localAudioBlob}
+        fileRef={fileRef}
       />
 
       {diarizationStatus === "diarizing" && (

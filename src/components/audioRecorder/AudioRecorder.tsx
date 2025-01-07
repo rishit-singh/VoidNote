@@ -1,3 +1,6 @@
+// components/AudioRecorder.tsx
+import React, { useEffect } from 'react';
+
 import { Button } from '@/components/ui/button';
 import { Loader } from 'lucide-react';
 
@@ -10,6 +13,7 @@ interface AudioRecorderProps {
   onDiarize: () => Promise<void>;
   diarizationStatus: string;
   localAudioBlob: Blob | null;
+  noteId?: string;
 }
 
 export const AudioRecorder: React.FC<AudioRecorderProps> = ({
@@ -21,7 +25,20 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({
   onDiarize,
   diarizationStatus,
   localAudioBlob,
+  noteId
 }) => {
+  // Clear audio element when note changes
+  useEffect(() => {
+    const audioElement = document.querySelector('audio');
+    if (audioElement) {
+      audioElement.src = '';
+      audioElement.load();
+    }
+  }, [noteId]);
+
+  // Only show audio-related elements if we have actual content
+  const hasAudioContent = !isRecording && audioURL && localAudioBlob;
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-center gap-4">
@@ -41,7 +58,7 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({
           )}
         </Button>
 
-        {!isRecording && audioURL && (
+        {hasAudioContent && (
           <Button asChild variant="secondary" size="lg">
             <a href={audioURL} download="recording.wav">
               Download Audio
@@ -49,7 +66,7 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({
           </Button>
         )}
 
-        {!isRecording && localAudioBlob && diarizationStatus === "idle" && (
+        {hasAudioContent && diarizationStatus === "idle" && (
           <Button
             onClick={onDiarize}
             variant="secondary"
@@ -61,9 +78,9 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({
         )}
       </div>
 
-      {!isRecording && audioURL && (
+      {hasAudioContent && (
         <div className="rounded-lg border-2 border-gray-700 p-6">
-          <audio src={audioURL} controls className="w-full h-12" />
+          <audio src={audioURL} controls className="w-full h-12" key={noteId} />
         </div>
       )}
     </div>

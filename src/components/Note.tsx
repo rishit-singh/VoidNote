@@ -24,13 +24,16 @@ export function Note({ noteRef, onResult }: NoteProps) {
   // Speech recognition setup
   const { isListening, startListening, stopListening } = useSpeechRecognition({
     onResult: (result: string) => {
+      console.log("Speech recognition result:", result); // Debugging log
       setTranscriptOutput(result);
       if (noteRef.current) {
         noteRef.current.transcript = result;
+        console.log("Updated noteRef:", noteRef.current); // Debugging log
         onResult?.(noteRef.current);
       }
     },
   });
+  
 
   // Voice recorder setup
   const { isRecording, audioBlob, startRecording, stopRecording } =
@@ -53,43 +56,43 @@ export function Note({ noteRef, onResult }: NoteProps) {
       }
     },
   });
-
-  // Load note data when switching notes
   useEffect(() => {
     const loadNoteData = () => {
-      // Load transcript
+      if (!noteRef.current) {
+        console.warn("noteRef.current is not initialized");
+        return;
+      }
+    
+      console.log("Loading note data:", noteRef.current); // Debugging log
+    
       setTranscriptOutput(noteRef.current.transcript || "");
-
-      // Load diarization results
       setDiarizationResults(noteRef.current.diarizationResults || []);
-
-      // Load audio state
-      if (noteRef.current.audio) {
+    
+      if (noteRef.current.audio instanceof Blob) {
         const newUrl = URL.createObjectURL(noteRef.current.audio);
         setLocalAudioBlob(noteRef.current.audio);
         setAudioUrl(newUrl);
       } else {
+        console.warn("Invalid audio blob:", noteRef.current.audio); // Debugging log
         setLocalAudioBlob(null);
         setAudioUrl(null);
       }
-
-      // Reset file input
+    
       if (fileRef.current) {
         fileRef.current.value = "";
       }
-
-      // Stop any ongoing recording
+    
       stopRecording();
     };
-
-    // Cleanup previous audio URL
+    
+  
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
     }
-
+  
     loadNoteData();
-  }, [noteRef.current.id]); // Only reload when switching notes
-
+  }, [noteRef, noteRef.current?.id]);
+  
   // Update audio state when recording changes
   useEffect(() => {
     if (audioBlob) {
@@ -180,13 +183,13 @@ export function Note({ noteRef, onResult }: NoteProps) {
         noteId={noteRef.current.id}
       />
 
-      {transcriptOutput && (
-        <div className="rounded-lg border-2 border-gray-700 bg-gray-800 p-6">
-          <p className="text-base text-white leading-relaxed">
-            {transcriptOutput}
-          </p>
-        </div>
-      )}
+{transcriptOutput && (
+  <div className="rounded-lg border-2 border-gray-700 bg-gray-800 p-6">
+    <p className="text-base text-white leading-relaxed">
+      {transcriptOutput}
+    </p>
+  </div>
+)}
 
       <FileUploader
         onFileUpload={handleFileUpload}

@@ -21,6 +21,7 @@
     "@radix-ui/react-tooltip": "^1.1.6",
     "@supabase/supabase-js": "^2.47.10",
     "@types/react": "^19.0.2",
+    "assemblyai": "^4.8.0",
     "class-variance-authority": "^0.7.1",
     "lucide-react": "^0.469.0",
     "react": "^19.0.0",

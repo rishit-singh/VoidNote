@@ -1,14 +1,15 @@
-import { useState, useRef } from "react";
+import { useRef, useState } from "react";
 
-export const useSpeechRecognition = ({ onResult }: { onResult: (transcript: string) => void | undefined }) => {
+export const useSpeechRecognition = ({ onResult }: { onResult: (transcript: string) => void }) => {
     const [isListening, setIsListening] = useState(false);
     const [transcript, setTranscript] = useState("");
-    const [error, setError] = useState(null);
-    const [finalTranscript, setFinalTranscript] = useState("");
+    const [error, setError] = useState<string | null>(null);
 
     const speechRecognitionRef = useRef<any>(null);
+    const finalTranscriptRef = useRef<string>("");
 
     if (!speechRecognitionRef.current) {
+        // Initialize SpeechRecognition instance
         speechRecognitionRef.current = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
         speechRecognitionRef.current.lang = 'en-US';
         speechRecognitionRef.current.continuous = true;
@@ -17,17 +18,17 @@ export const useSpeechRecognition = ({ onResult }: { onResult: (transcript: stri
 
         speechRecognitionRef.current.onresult = (event: any) => {
             const results = Array.from(event.results);
-            let interimTranscript = '';
-            
+            let interimTranscript = "";
+
             results.forEach((result: any) => {
                 if (result.isFinal) {
-                    setFinalTranscript(prev => prev + ' ' + result[0].transcript);
+                    finalTranscriptRef.current += result[0].transcript + " ";
                 } else {
                     interimTranscript += result[0].transcript;
                 }
             });
 
-            const fullTranscript = (finalTranscript + ' ' + interimTranscript).trim();
+            const fullTranscript = (finalTranscriptRef.current + interimTranscript).trim();
             setTranscript(fullTranscript);
             onResult(fullTranscript);
         };
@@ -38,18 +39,16 @@ export const useSpeechRecognition = ({ onResult }: { onResult: (transcript: stri
     }
 
     const startListening = () => {
-        setFinalTranscript('');
-        setTranscript('');
+        finalTranscriptRef.current = ""; // Reset the ref
+        setTranscript(""); // Clear the UI transcript
         speechRecognitionRef.current.start();
         setIsListening(true);
     };
 
     const stopListening = () => {
-        if (speechRecognitionRef.current) {
-            speechRecognitionRef.current.stop();
-            setIsListening(false);
-        }
+        speechRecognitionRef.current.stop();
+        setIsListening(false);
     };
 
     return { isListening, transcript, error, startListening, stopListening };
-}
+};

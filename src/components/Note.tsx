@@ -1,50 +1,45 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { AudioRecorder } from "./audioRecorder/AudioRecorder";
+import { FileUploader } from "./FileUploader/FileUploader";
 import { Loader } from "lucide-react";
-import Results from "@/components/Results";
+import { NoteModel } from "@/types/types";
+import Results from "./Results";
 import useDiarization from "@/hooks/useDiarization";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 
-export interface Audio {
-  blob: Blob | null;
-  url: string | null;
-}
-
-export interface NoteModel {
-  id: string;
-  transcript: string;
-  diarizationResults: any[];
-  createdAt: Date | null;
-  audio: Blob | null;
-  url: string | null;
-}
-
-export function Note({
-  noteRef,
-  onResult,
-}: {
+interface NoteProps {
   noteRef: React.MutableRefObject<NoteModel>;
   onResult?: (note: NoteModel) => void;
-}) {
+}
+
+export function Note({ noteRef, onResult }: NoteProps) {
   const [transcriptOutput, setTranscriptOutput] = useState<string>("");
   const [diarizationResults, setDiarizationResults] = useState<any[]>([]);
   const [localAudioBlob, setLocalAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
+  // Speech recognition setup
   const { isListening, startListening, stopListening } = useSpeechRecognition({
     onResult: (result: string) => {
+      console.log("Speech recognition result:", result); // Debugging log
       setTranscriptOutput(result);
       if (noteRef.current) {
         noteRef.current.transcript = result;
+        console.log("Updated noteRef:", noteRef.current); // Debugging log
         onResult?.(noteRef.current);
       }
     },
   });
+  
 
-  const { isRecording, audioURL, audioBlob, startRecording, stopRecording } =
+  // Voice recorder setup
+  const { isRecording, audioBlob, startRecording, stopRecording } =
     useVoiceRecorder();
 
+  // Diarization setup
   const { runDiarization, status: diarizationStatus } = useDiarization({
     onResult: (result) => {
       if (!result?.segments) return;
@@ -61,29 +56,66 @@ export function Note({
       }
     },
   });
-
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  // Ensure the UI re-renders when the noteRef changes.
   useEffect(() => {
-    setTranscriptOutput(""); // Reset transcript for new note
-    setDiarizationResults(noteRef.current.diarizationResults || []);
-    if (fileRef.current) {
-      fileRef.current.value = "";
+    const loadNoteData = () => {
+      if (!noteRef.current) {
+        console.warn("noteRef.current is not initialized");
+        return;
+      }
+    
+      console.log("Loading note data:", noteRef.current); // Debugging log
+    
+      setTranscriptOutput(noteRef.current.transcript || "");
+      setDiarizationResults(noteRef.current.diarizationResults || []);
+    
+      if (noteRef.current.audio instanceof Blob) {
+        const newUrl = URL.createObjectURL(noteRef.current.audio);
+        setLocalAudioBlob(noteRef.current.audio);
+        setAudioUrl(newUrl);
+      } else {
+        console.warn("Invalid audio blob:", noteRef.current.audio); // Debugging log
+        setLocalAudioBlob(null);
+        setAudioUrl(null);
+      }
+    
+      if (fileRef.current) {
+        fileRef.current.value = "";
+      }
+    
+      stopRecording();
+    };
+    
+  
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
     }
-
-    stopRecording();
-    setLocalAudioBlob(null);
-  }, [noteRef.current]);
-
+  
+    loadNoteData();
+  }, [noteRef, noteRef.current?.id]);
+  
+  // Update audio state when recording changes
   useEffect(() => {
-    if (audioBlob && audioBlob !== noteRef.current?.audio) {
+    if (audioBlob) {
+      const newUrl = URL.createObjectURL(audioBlob);
       setLocalAudioBlob(audioBlob);
+      setAudioUrl(newUrl);
+
       if (noteRef.current) {
         noteRef.current.audio = audioBlob;
+        noteRef.current.url = newUrl;
+        onResult?.(noteRef.current);
       }
     }
   }, [audioBlob]);
+
+  // Cleanup function for audio resources
+  useEffect(() => {
+    return () => {
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+    };
+  }, []);
 
   const handleFileUpload = async (file: File) => {
     try {
@@ -93,7 +125,7 @@ export function Note({
     }
   };
 
-  const start = async () => {
+  const handleStart = async () => {
     try {
       await startListening();
       await startRecording();
@@ -102,15 +134,18 @@ export function Note({
     }
   };
 
-  const stop = async () => {
+  const handleStop = async () => {
     try {
       await stopListening();
       await stopRecording();
 
-      if (noteRef.current) {
+      if (noteRef.current && audioBlob) {
+        const newUrl = URL.createObjectURL(audioBlob);
+        setAudioUrl(newUrl);
+
         noteRef.current.transcript = transcriptOutput.trim();
         noteRef.current.audio = audioBlob;
-        noteRef.current.url = audioURL;
+        noteRef.current.url = newUrl;
         onResult?.(noteRef.current);
       }
     } catch (err) {
@@ -118,6 +153,11 @@ export function Note({
     }
   };
 
+  const handleDiarize = async () => {
+    if (localAudioBlob) {
+      await runDiarization(localAudioBlob);
+    }
+  };
   return (
     <div className="flex flex-col w-full gap-8 p-6 bg-neutral-900 rounded-lg shadow-lg">
       <div className="text-center mb-4">
@@ -131,85 +171,33 @@ export function Note({
         </p>
       </div>
 
-      {/* Recording Controls */}
-      <div className="flex justify-center gap-4">
-        <Button
-          onClick={isListening ? stop : start}
-          variant={isListening ? "destructive" : "default"}
-          size="lg"
-          className="px-6 flex items-center gap-2"
-        >
-          {isListening ? (
-            <>
-              <Loader className="animate-spin" />
-              Stop Recording
-            </>
-          ) : (
-            "Start Recording"
-          )}
-        </Button>
+      <AudioRecorder
+        isListening={isListening}
+        isRecording={isRecording}
+        audioURL={audioUrl} 
+        onStart={handleStart}
+        onStop={handleStop}
+        onDiarize={handleDiarize}
+        diarizationStatus={diarizationStatus}
+        localAudioBlob={localAudioBlob}
+        noteId={noteRef.current.id}
+      />
 
-        {!isRecording && audioURL && (
-          <Button asChild variant="secondary" size="lg">
-            <a href={audioURL} download="recording.wav">
-              Download Audio
-            </a>
-          </Button>
-        )}
+{transcriptOutput && (
+  <div className="rounded-lg border-2 border-gray-700 bg-gray-800 p-6">
+    <p className="text-base text-white leading-relaxed">
+      {transcriptOutput}
+    </p>
+  </div>
+)}
 
-        {!isRecording && localAudioBlob && diarizationStatus === "idle" && (
-          <Button
-            onClick={() => runDiarization(localAudioBlob)}
-            variant="secondary"
-            size="lg"
-            className="px-6"
-          >
-            Run Diarization
-          </Button>
-        )}
-      </div>
+      <FileUploader
+        onFileUpload={handleFileUpload}
+        isRecording={isRecording}
+        localAudioBlob={localAudioBlob}
+        fileRef={fileRef}
+      />
 
-      {/* Transcript Output */}
-      {transcriptOutput && (
-        <div className="rounded-lg border-2 border-gray-700 bg-gray-800 p-6">
-          <p className="text-base text-white leading-relaxed">{transcriptOutput}</p>
-        </div>
-      )}
-
-      {/* Audio Controls */}
-      {!isRecording && audioURL && (
-        <div className="rounded-lg border-2 border-gray-700 p-6">
-          <audio src={audioURL} controls className="w-full h-12" />
-        </div>
-      )}
-
-      {/* File Upload Section */}
-      {!isRecording && !localAudioBlob && (
-        <div className="flex flex-col items-center gap-4">
-          <div className="relative text-sm uppercase">
-            <span className="bg-neutral-900 px-3 py-1 text-gray-400">or upload</span>
-          </div>
-          <label
-            htmlFor="audioUpload"
-            className="flex flex-col items-center justify-center border-2 border-dotted border-white rounded-lg p-10 w-full max-w-md cursor-pointer hover:border-white transition-colors"
-          >
-            <span className="text-white mb-2">Drag & Drop or Click to Upload</span>
-            <input
-              id="audioUpload"
-              type="file"
-              accept="audio/*"
-              ref={fileRef}
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFileUpload(file);
-              }}
-            />
-          </label>
-        </div>
-      )}
-
-      {/* Diarization Status */}
       {diarizationStatus === "diarizing" && (
         <div className="flex items-center gap-3 text-gray-400">
           <Loader className="animate-spin" />
@@ -217,7 +205,6 @@ export function Note({
         </div>
       )}
 
-      {/* Diarization Results */}
       {!isRecording && diarizationResults.length > 0 && (
         <Results
           results={diarizationResults}

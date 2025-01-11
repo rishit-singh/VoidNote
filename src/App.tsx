@@ -1,22 +1,34 @@
-import './App.css'
-import NoteView from './components/NoteView';
-import { ThemeProvider } from './components/theme-provider';
+import { Route, Routes } from "react-router-dom";
+
+import HomeLandingPage from "./pages/Home/HomeLandingPage";
+import NoteViewHomePage from "./pages/Notes/NoteViewHomePage";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import RedirectRoute from "@/components/auth/RedirectRoute";
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <div className="flex h-screen bg-background">
-        <div className="flex flex-col w-full">
-          <header className="h-14 flex items-center px-6 border-b border-border">
-            <h1 className="text-2xl font-semibold text-foreground transition-all duration-200 hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-500 hover:bg-clip-text hover:text-transparent">YapNote</h1>
-          </header>
-          <main className="flex-1">
-            <NoteView />
-          </main>
-        </div>
-      </div>
-    </ThemeProvider>
+    <Routes>
+      {/* Public Routes */}
+      <Route
+        path="/"
+        element={
+          <RedirectRoute>
+            <HomeLandingPage />
+          </RedirectRoute>
+        }
+      />
+
+      {/* Protected Routes */}
+      <Route
+        path="/notes"
+        element={
+          <ProtectedRoute>
+            <NoteViewHomePage />
+          </ProtectedRoute>
+        }
+      />
+    </Routes>
   );
 }
 
-export default App; 
+export default App;

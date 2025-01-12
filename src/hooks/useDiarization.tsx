@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { diarize } from './diarization/replicate';
 import { DiarizationResponse } from './diarization/types';
+import { diarize } from './diarization/replicate';
+import { useState } from 'react';
 
 export default function useDiarization({ onResult }: { onResult: (result: DiarizationResponse) => void }) {
     const [results, setResults] = useState<DiarizationResponse | null>(null);

@@ -1,89 +1,93 @@
 <div align="center">
   <img src="public/logo.svg" alt="VoidNote Logo" width="100">
   <h1>VoidNote</h1>
-  
-  <p>Voice-powered note-taking for seamless meeting documentation</p>
+  <p><em>Voice-first conversation capture.</em></p>
 
-  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-  [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
-  [![Node.js Version](https://img.shields.io/badge/node-%3E%3D16-brightgreen)](https://nodejs.org/)
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License">
+  </a>
+  <a href="http://makeapullrequest.com">
+    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
+  </a>
+  <a href="https://nodejs.org/">
+    <img src="https://img.shields.io/badge/node-%3E%3D16-brightgreen" alt="Node.js >=16">
+  </a>
 </div>
 
 ---
 
 ## Features
 
-- **Voice Recognition** - Effortlessly capture meeting notes using speech-to-text
-- **Smart Transcription** - Automatically transcribe and organize spoken content
-- **Easy Editing** - Seamlessly edit and refine transcribed notes
-- **Smart Organization** - Categorize notes by meeting type or project
-- **Team Collaboration** - Share meeting summaries with team members instantly
+- **Live Speech-to-Text** – Real-time transcription with low latency.
+- **Structured Parsing** – Breaks down chaotic dialogue into readable sections.
+- **Inline Editing** – Modify transcriptions without losing speaker context.
+- **Contextual Sorting** – Automatically classifies meetings by type or tag.
+- **Instant Sharing** – Push summaries to teammates. Or don't. Your call.
+
+---
 
 ## Getting Started
 
-### Prerequisites
+### Requirements
 
 - Node.js v16 or higher
-- Modern web browser with microphone support
-- Internet connection for voice recognition
+- Chromium-based browser with microphone access
+- Internet (cloud inference dependency)
 
-### Installation
+---
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/rishit-singh/voidnote.git
-   ```
+### Install
 
-2. **Install dependencies**
-   ```bash
-   cd voidnote
-   npm install
-   ```
+```bash
+git clone https://github.com/rishit-singh/voidnote.git
+cd voidnote
+npm install
+cp .env.example .env
+# edit .env as needed
+```
 
-3. **Set up environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+---
 
-## Usage
+### Run
 
-1. **Start the development server**
-   ```bash
-   npm run dev
-   ```
+```bash
+npm run dev
+```
 
-2. **Open your browser**
-   Navigate to `http://localhost:3000` to start using VoidNote
+Navigate to [`http://localhost:3000`](http://localhost:3000)
+
+---
 
 ## Contributing
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are greatly appreciated.
+We don’t bite. Fork, branch, commit, push, PR. 
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+```bash
+git checkout -b feat/my-thing
+git commit -m "Add: my thing"
+git push origin feat/my-thing
+```
+
+Open a pull request. If you break something in style, we might even keep it.
+
+---
+
+#### DOCS COMING SOON™   
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT. Use it, remix it.
+
+---
 
 ## Support
 
-Need help? We've got you covered!
-
-- Open an issue in the [GitHub repository](https://github.com/rishit-singh/voidnote/issues)
-- Contact the maintainers
-- Check out our [documentation](docs/README.md)
-
-## Show your support
-
-Give a star if this project helped you!
+- [Issues](https://github.com/rishit-singh/voidnote/issues)
+- Contact: [X](https://x.com/__coderish__)
 
 ---
 
 <div align="center">
-  Made by the VoidNote team
+  <strong>The Null Node</strong>
 </div>
+

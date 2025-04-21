@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="public/logo.svg" alt="YapNote Logo" width="100">
-  <h1>YapNote</h1>
+  <img src="public/logo.svg" alt="VoidNote Logo" width="100">
+  <h1>VoidNote</h1>
   
   <p>Voice-powered note-taking for seamless meeting documentation</p>
 
@@ -13,13 +13,13 @@
 
 ## Features
 
--  **Voice Recognition** - Effortlessly capture meeting notes using speech-to-text
--  **Smart Transcription** - Automatically transcribe and organize spoken content
--  **Easy Editing** - Seamlessly edit and refine transcribed notes
--  **Smart Organization** - Categorize notes by meeting type or project
--  **Team Collaboration** - Share meeting summaries with team members instantly
+- **Voice Recognition** - Effortlessly capture meeting notes using speech-to-text
+- **Smart Transcription** - Automatically transcribe and organize spoken content
+- **Easy Editing** - Seamlessly edit and refine transcribed notes
+- **Smart Organization** - Categorize notes by meeting type or project
+- **Team Collaboration** - Share meeting summaries with team members instantly
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -27,16 +27,16 @@
 - Modern web browser with microphone support
 - Internet connection for voice recognition
 
-### 🔧 Installation
+### Installation
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/rishit-singh/yapnote.git
+   git clone https://github.com/rishit-singh/voidnote.git
    ```
 
 2. **Install dependencies**
    ```bash
-   cd yapnote
+   cd voidnote
    npm install
    ```
 
@@ -46,7 +46,7 @@
    # Edit .env with your configuration
    ```
 
-## 💻 Usage
+## Usage
 
 1. **Start the development server**
    ```bash
@@ -54,11 +54,11 @@
    ```
 
 2. **Open your browser**
-   Navigate to `http://localhost:3000` to start using YapNote
+   Navigate to `http://localhost:3000` to start using VoidNote
 
-## 🤝 Contributing
+## Contributing
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are greatly appreciated.
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
@@ -66,24 +66,24 @@ Contributions are what make the open source community such an amazing place to l
 4. Push to the Branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 💪 Support
+## Support
 
 Need help? We've got you covered!
 
-- 📫 Open an issue in the [GitHub repository](https://github.com/rishit-singh/yapnote/issues)
-- 💬 Contact the maintainers
-- 📚 Check out our [documentation](docs/README.md)
+- Open an issue in the [GitHub repository](https://github.com/rishit-singh/voidnote/issues)
+- Contact the maintainers
+- Check out our [documentation](docs/README.md)
 
-## 🌟 Show your support
+## Show your support
 
-Give a ⭐️ if this project helped you!
+Give a star if this project helped you!
 
 ---
 
 <div align="center">
-  Made with ❤️ by the YapNote team
+  Made by the VoidNote team
 </div>

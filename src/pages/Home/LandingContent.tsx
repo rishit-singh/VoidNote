@@ -29,7 +29,7 @@ const LandingContent: React.FC = () => {
   return (
     <div className=" p-8 h-full flex flex-col justify-center">
       <div className="max-w-xl mx-auto">
-        <h1 className="text-5xl font-bold text-green-400 mb-4">YapNote</h1>
+        <h1 className="text-5xl font-bold text-green-400 mb-4">VoidNote</h1>
         <p className="text-lg text-gray-400 mb-8">
           Voice-powered note-taking for seamless meeting documentation
         </p>
@@ -52,8 +52,7 @@ const LandingContent: React.FC = () => {
         </div>
 
         <p className="hidden lg:flex text-xs text-neutral-400 mt-8">
-          Made with <span className="text-red-500">❤</span> by YapNote —
-          Empowering your voice, one note at a time
+          Made with love by VoidNote — Empowering your voice, one note at a time
         </p>
       </div>
     </div>

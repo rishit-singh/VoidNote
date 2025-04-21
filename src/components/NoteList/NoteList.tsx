@@ -24,7 +24,7 @@ export const NoteList: React.FC<NoteListProps> = ({
     return (
       <Button
         variant="ghost"
-        className="w-full justify-start text-gray-400"
+        className="w-full justify-start text-neutral-400 hover:text-white hover:bg-neutral-800"
         onClick={onNoteCreate}
       >
         <Plus className="mr-2 h-4 w-4" />

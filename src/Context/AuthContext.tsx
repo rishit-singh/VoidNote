@@ -1,4 +1,4 @@
-import {
+import React, {
   ReactNode,
   createContext,
   useContext,
@@ -7,7 +7,6 @@ import {
 } from "react";
 // authContext.ts
 import { Session, User } from "@supabase/supabase-js";
-
 import { supabase } from "@/lib/supabaseClient";
 
 // Define a unified AuthResponse type
@@ -21,17 +20,20 @@ interface AuthResponse {
 }
 
 interface AuthContextType {
-  signUpNewUser: (email: string, password: string) => Promise<AuthResponse>;
-  signInUser: (email: string, password: string) => Promise<AuthResponse>;
+  session: any | null;
+  signUpNewUser: (email: string, password: string) => Promise<any>;
+  signInUser: (email: string, password: string) => Promise<any>;
+  signInWithGoogle: () => Promise<any>;
   signOut: () => Promise<void>;
-  signInWithGoogle: () => Promise<AuthResponse>;
-  session: Session | null;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
-export const AuthContext = createContext<AuthContextType | undefined>(
-  undefined
-);
+const AuthContext = createContext<AuthContextType>({
+  session: null,
+  signUpNewUser: async () => ({ data: { user: {}, session: {} }, error: null }),
+  signInUser: async () => ({ data: { user: {}, session: {} }, error: null }),
+  signInWithGoogle: async () => ({ data: { user: {}, session: {} }, error: null }),
+  signOut: async () => {},
+});
 
 // AuthProvider.tsx
 interface AuthContextProviderProps {
@@ -42,6 +44,9 @@ export const AuthContextProvider: React.FC<AuthContextProviderProps> = ({
   children,
 }) => {
   const [session, setSession] = useState<Session | null>(null);
+
+  // Temporarily provide mock auth functions
+  const mockAuthResponse = { data: { user: {}, session: {} }, error: null };
 
   // Sign Up
   const signUpNewUser = async (
@@ -115,7 +120,6 @@ export const AuthContextProvider: React.FC<AuthContextProviderProps> = ({
   const signInWithGoogle = async (): Promise<AuthResponse> => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
-
         provider: "google",
       });
 
@@ -180,11 +184,11 @@ export const AuthContextProvider: React.FC<AuthContextProviderProps> = ({
   }, []);
 
   const value: AuthContextType = {
-    signUpNewUser,
-    signInUser,
-    signOut,
-    session,
-    signInWithGoogle,
+    session: null,
+    signUpNewUser: async () => mockAuthResponse,
+    signInUser: async () => mockAuthResponse,
+    signInWithGoogle: async () => mockAuthResponse,
+    signOut: async () => {},
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

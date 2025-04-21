@@ -34,6 +34,8 @@ export const useNote = () => {
          const updatedNotes = [...notes];
          updatedNotes[noteIndex] = noteRef.current;
          setNotes(updatedNotes);
+       } else {
+         setNotes([...notes, noteRef.current]);
        }
      };
    
@@ -42,13 +44,13 @@ export const useNote = () => {
        setNotes(updatedNotes);
    
        if (currentNote.current.id === id || updatedNotes.length === 0) {
-         currentNote.current = initialNote;
+         noteRef.current = initialNote;
          updateNote();
        }
      };
    
      const renameNote = (id: string, newName: string) => {
-       const updatedNotes = notes.map((n: { id: string; }) =>
+       const updatedNotes = notes.map((n) =>
          n.id === id ? { ...n, transcript: newName } : n
        );
        setNotes(updatedNotes);

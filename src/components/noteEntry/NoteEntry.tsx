@@ -6,8 +6,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useEffect, useRef, useState } from "react";
 
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, MoreVertical } from "lucide-react";
 import { NoteModel } from "@/types/types";
+import { Button } from "@/components/ui/button";
 
 interface NoteEntryProps {
      note: NoteModel;
@@ -17,7 +18,7 @@ interface NoteEntryProps {
      onDelete: (id: string) => void;
    }
    
-   const NoteEntry: React.FC<NoteEntryProps> = ({
+   export const NoteEntry: React.FC<NoteEntryProps> = ({
      note,
      isSelected,
      onSelect,
@@ -46,13 +47,13 @@ interface NoteEntryProps {
      return (
        <div
          className={`w-full flex items-center justify-between px-3 py-2 rounded-md ${
-           isSelected ? 'bg-gray-800' : 'hover:bg-gray-700'
-         } transition-colors`}
+           isSelected ? 'bg-neutral-800' : 'hover:bg-neutral-800/50'
+         } transition-colors group`}
        >
          {isEditing ? (
            <input
              ref={inputRef}
-             className="flex-grow text-white bg-transparent border border-gray-600 rounded-md px-2 py-1 focus:outline-none"
+             className="flex-grow text-white bg-neutral-900 border border-neutral-700 rounded-md px-2 py-1 focus:outline-none focus:border-neutral-600"
              value={currentName}
              onChange={(e) => setCurrentName(e.target.value)}
              onBlur={handleSave}
@@ -66,32 +67,21 @@ interface NoteEntryProps {
            />
          ) : (
            <span
-             className="text-white flex-grow truncate cursor-pointer"
+             className="text-neutral-300 flex-grow truncate cursor-pointer hover:text-white"
              onClick={() => onSelect(note)}
            >
              {currentName}
            </span>
          )}
    
-         <DropdownMenu>
-           <DropdownMenuTrigger>
-             <MoreHorizontal className="h-4 w-4" />
-           </DropdownMenuTrigger>
-           <DropdownMenuContent className="bg-gray-800 text-white rounded-md">
-             <DropdownMenuItem
-               className="cursor-pointer hover:bg-gray-700"
-               onClick={() => setIsEditing(true)}
-             >
-               Rename
-             </DropdownMenuItem>
-             <DropdownMenuItem
-               className="cursor-pointer hover:bg-gray-700"
-               onClick={() => onDelete(note.id)}
-             >
-               Delete
-             </DropdownMenuItem>
-           </DropdownMenuContent>
-         </DropdownMenu>
+         <Button
+           variant="ghost"
+           size="icon"
+           className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-white hover:bg-neutral-700"
+           onClick={() => setIsEditing(true)}
+         >
+           <MoreVertical className="h-4 w-4" />
+         </Button>
        </div>
      );
    };

@@ -12,7 +12,7 @@
         stroke-linecap="round"
         fill="none"/>
   
-  <!-- Main Y Shape -->
+  <!-- Main V Shape -->
   <path d="M120 80 L200 180 L280 80" 
         stroke="#333333" 
         stroke-width="40" 
@@ -37,4 +37,4 @@
     <rect x="-12" y="-40" width="24" height="5" rx="2" fill="#999999"/>
     <rect x="-12" y="-30" width="24" height="5" rx="2" fill="#999999"/>
   </g>
-</svg>
+</svg >

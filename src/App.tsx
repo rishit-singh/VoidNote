@@ -8,7 +8,7 @@ function App() {
       <div className="flex h-screen bg-background">
         <div className="flex flex-col w-full">
           <header className="h-14 flex items-center px-6 border-b border-border">
-            <h1 className="text-xl font-semibold text-foreground">YapNote</h1>
+            <h1 className="text-xl font-semibold text-foreground">VoidNote</h1>
           </header>
           <main className="flex-1">
             <NoteView />

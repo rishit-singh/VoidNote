@@ -1,59 +1,92 @@
-<table>
-  <tr>
-    <td>
-      <img src="public/logo.svg" alt="YapNote Logo" width="80">
-    </td>
-    <td style="vertical-align: middle; padding-left: 1rem;">
-      <h1 style="margin: 0;">YapNote</h1>
-    </td>
-  </tr>
-</table>
+<div align="center">
+  <img src="public/logo.svg" alt="VoidNote Logo" width="100">
+  <h1>VoidNote</h1>
+  <p><em>Voice-first conversation capture.</em></p>
 
-YapNote is a voice-powered note-taking app designed for efficient meeting documentation.
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License">
+  </a>
+  <a href="http://makeapullrequest.com">
+    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
+  </a>
+  <a href="https://nodejs.org/"
+    <img src="https://img.shields.io/badge/node-%3E%3D16-brightgreen" alt="Node.js >=16">
+  </a>
+</div>
+
+---
 
 ## Features
 
-- Capture meeting notes using voice recognition
-- Automatically transcribe and organize spoken content
-- Edit and refine transcribed notes
-- Categorize notes by meeting type or project
-- Share meeting summaries with team members
-u
+- **Live Speech-to-Text** – Real-time transcription with low latency.
+- **Structured Parsing** – Breaks down chaotic dialogue into readable sections.
+- **Inline Editing** – Modify transcriptions without losing speaker context.
+- **Contextual Sorting** – Automatically classifies meetings by type or tag.
+- **Instant Sharing** – Push summaries to teammates. Or don't. Your call.
+
+---
+
 ## Getting Started
 
-### Prerequisites
+### Requirements
+
 - Node.js v16 or higher
-- Modern web browser with microphone support
+- Chromium-based browser with microphone access
+- Internet (cloud inference dependency)
 
-### Installation
-1. Clone the repository
-```
-git clone https://github.com/rishit-singh/yapnote.git
-```
+---
 
-2. Install dependencies
-```
-cd yapnote
+### Install
+
+```bash
+git clone https://github.com/rishit-singh/voidnote.git
+cd voidnote
 npm install
-```
-
-3. Set up environment variables
-```
 cp .env.example .env
-# Edit .env with your configuration
+# edit .env as needed
 ```
 
-## Usage
+---
 
-1. Start the development server
-```
+### Run
+
+```bash
 npm run dev
 ```
 
+Navigate to [`http://localhost:3000`](http://localhost:3000)
+
+---
+
+## Contributing
+
+We don’t bite. Fork, branch, commit, push, PR. 
+
+```bash
+git checkout -b feat/my-thing
+git commit -m "Add: my thing"
+git push origin feat/my-thing
+```
+
+Open a pull request. If you break something in style, we might even keep it.
+
+---
+
+#### DOCS COMING SOON™   
+
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT. Use it, remix it.
+
+---
 
 ## Support
 
-For support, please open an issue in the GitHub repository or contact the maintainers.
+- [Issues](https://github.com/rishit-singh/voidnote/issues)
+- Contact: [X](https://x.com/__coderish__)
+
+---
+
+<div align="center">
+  <strong>The Null Node</strong>
+</div>

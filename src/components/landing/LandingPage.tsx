@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState, type MouseEvent } from "react";
+import { useRef, useState, useSyncExternalStore, type MouseEvent } from "react";
+import { motion, type Variants } from "motion/react";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -11,6 +12,44 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { SignIn } from "@/components/SignIn";
+
+const MotionButton = motion.create(Button);
+const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
+
+// Motion's current hook snapshots this setting; subscribe so open pages respond too.
+function subscribeReducedMotion(onChange: () => void) {
+  const query = window.matchMedia(reducedMotionQuery);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+function getReducedMotion() {
+  return window.matchMedia(reducedMotionQuery).matches;
+}
+
+function getServerReducedMotion() {
+  return true;
+}
+
+const reveal: Variants = {
+  rest: { opacity: 1, y: 0, transition: { duration: 0 } },
+  play: (delay: number = 0) => ({
+    opacity: [0.3, 1],
+    y: [8, 0],
+    transition: { duration: 0.55, delay, ease: "easeOut" },
+  }),
+};
+const sourceEmphasis: Variants = {
+  rest: { backgroundColor: "rgba(184, 212, 196, 0)", transition: { duration: 0 } },
+  play: {
+    backgroundColor: [
+      "rgba(184, 212, 196, 0)",
+      "rgba(184, 212, 196, 0.14)",
+      "rgba(184, 212, 196, 0)",
+    ],
+    transition: { duration: 1.6, delay: 0.2, times: [0, 0.35, 1] },
+  },
+};
 
 function Brand() {
   return (
@@ -28,30 +67,44 @@ function Brand() {
   );
 }
 
-function Waveform({ small = false }: { small?: boolean }) {
-  const count = small ? 36 : 84;
+function Waveform({ reduceMotion }: { reduceMotion: boolean }) {
+  const count = 84;
   return (
     <svg className="vn-demo-wave" viewBox={`0 0 ${count * 7} 64`} fill="none" aria-hidden="true">
-      {Array.from({ length: count }, (_, index) => {
-        const height = 6 + Math.abs(Math.sin(index * 1.7) * Math.cos(index * 0.31)) * 48;
-        return (
-          <rect
-            key={index}
-            x={index * 7 + 1}
-            y={(64 - height) / 2}
-            width="2.5"
-            height={height}
-            rx="1.25"
-            style={{ animationDelay: `${index * 23}ms` }}
-          />
-        );
-      })}
+      <motion.g
+        initial={{ scaleY: 1 }}
+        whileInView={{ scaleY: reduceMotion ? 1 : [0.35, 1, 0.7, 1] }}
+        viewport={{ once: true }}
+        transition={{ duration: reduceMotion ? 0 : 1.2, ease: "easeInOut" }}
+        style={{ transformOrigin: "center", transformBox: "fill-box" }}
+      >
+        {Array.from({ length: count }, (_, index) => {
+          const height = 6 + Math.abs(Math.sin(index * 1.7) * Math.cos(index * 0.31)) * 48;
+          return (
+            <rect
+              key={index}
+              x={index * 7 + 1}
+              y={(64 - height) / 2}
+              width="2.5"
+              height={height}
+              rx="1.25"
+            />
+          );
+        })}
+      </motion.g>
     </svg>
   );
 }
 
-function ProductDemo() {
-  const [replay, setReplay] = useState(0);
+function ProductDemo({
+  replay,
+  onReplay,
+  reduceMotion,
+}: {
+  replay: number;
+  onReplay: () => void;
+  reduceMotion: boolean;
+}) {
   return (
     <figure
       className="vn-product-demo"
@@ -63,23 +116,30 @@ function ProductDemo() {
           <i />
           <i />
         </div>
-        <span>YOUR CONVERSATION, KEPT.</span>
+        <span>RECORDING / TRANSCRIPT</span>
         <span className="vn-demo-sample">DEMO</span>
       </div>
       <div className="vn-demo-workspace" key={replay}>
         <aside className="vn-demo-sidebar" aria-hidden="true">
-          <span className="vn-demo-sidebar-title">Your notes</span>
+          <span className="vn-demo-sidebar-title">Recordings</span>
           <span className="vn-demo-note is-selected">
-            <FileTextIcon /> A little room to think
+            <FileTextIcon /> Launch review
           </span>
           <span className="vn-demo-note">
-            <FileTextIcon /> The next chapter
+            <FileTextIcon /> Scope review
           </span>
           <span className="vn-demo-note">
-            <FileTextIcon /> Friday catch-up
+            <FileTextIcon /> Weekly sync
+          </span>
+          <span className="vn-demo-sidebar-title vn-demo-profiles-label">Speaker profiles</span>
+          <span className="vn-demo-note">
+            <PersonIcon /> Jamie
+          </span>
+          <span className="vn-demo-note">
+            <PersonIcon /> Alex
           </span>
           <span className="vn-demo-sidebar-bottom">
-            <span className="vn-demo-avatar">J</span> Just you. All here.
+            <span className="vn-demo-avatar">J</span> Workspace
           </span>
         </aside>
         <div className="vn-demo-document">
@@ -89,7 +149,7 @@ function ProductDemo() {
               <CheckIcon /> Saved
             </span>
           </div>
-          <h2>A little room to think</h2>
+          <h2>Launch review</h2>
           <p className="vn-demo-date">Today · 2 speakers</p>
           <div className="vn-demo-audio">
             <span className="vn-demo-audio-icon" aria-hidden="true">
@@ -97,44 +157,132 @@ function ProductDemo() {
                 <path d="m5 3 8 5-8 5V3Z" />
               </svg>
             </span>
-            <Waveform />
+            <Waveform reduceMotion={reduceMotion} />
             <span>02:34</span>
           </div>
-          <div className="vn-demo-transcript">
-            <div className="vn-demo-passage vn-demo-passage-one">
+          <motion.div
+            className="vn-demo-transcript"
+            initial="rest"
+            whileInView={reduceMotion ? "rest" : "play"}
+            viewport={{ once: true, amount: 0.4 }}
+          >
+            <motion.div className="vn-demo-passage" variants={reveal} custom={0.1}>
               <div className="vn-demo-speaker">
-                <span className="vn-speaker-dot" /> Jamie <time>00:08</time>
+                <span className="vn-speaker-dot" /> <a href="#profiles">Jamie ↗</a>{" "}
+                <time>00:08</time>
               </div>
-              <p>What if we made a little more room for the things we actually want to work on?</p>
-            </div>
-            <div className="vn-demo-passage vn-demo-passage-two">
+              <p>
+                We need the <strong>review complete</strong> before launch.
+              </p>
+            </motion.div>
+            <motion.div className="vn-demo-passage" variants={reveal} custom={0.45}>
               <div className="vn-demo-speaker">
                 <span className="vn-speaker-dot is-second" /> Alex <time>00:16</time>
               </div>
               <p>
-                I like that.{" "}
-                <span className="vn-demo-highlight">Less rushing to the next thing.</span> More time
-                with the idea in front of us.
+                I’ll send the <span className="vn-demo-highlight">revised scope on Thursday.</span>
               </p>
-            </div>
-            <div className="vn-demo-passage vn-demo-passage-three">
+            </motion.div>
+            <motion.div className="vn-demo-passage" variants={reveal} custom={0.8}>
               <div className="vn-demo-speaker">
                 <span className="vn-speaker-dot" /> Jamie <time>00:24</time>
               </div>
-              <p>Exactly. Let’s start there.</p>
-            </div>
-          </div>
+              <p>Then we can confirm the launch date.</p>
+            </motion.div>
+          </motion.div>
         </div>
       </div>
       <figcaption className="vn-demo-caption">
-        <span>
-          <span className="vn-status-dot" /> A conversation becomes a note.
-        </span>
-        <Button variant="ghost" size="sm" onClick={() => setReplay((value) => value + 1)}>
+        <span>Sample recording</span>
+        <Button variant="ghost" size="sm" onClick={onReplay}>
           <LoopIcon data-icon="inline-start" /> Replay demo
         </Button>
       </figcaption>
     </figure>
+  );
+}
+
+function ProfileDemo({ reduceMotion }: { reduceMotion: boolean }) {
+  return (
+    <motion.figure
+      id="profiles"
+      className="vn-profile-demo"
+      aria-label="Sample profile showing Jamie's words across two conversations"
+      initial="rest"
+      whileInView={reduceMotion ? "rest" : "play"}
+      viewport={{ once: true, amount: 0.4 }}
+    >
+      <div className="vn-profile-demo-top">
+        <span>SPEAKER PROFILE</span>
+        <span>DEMO</span>
+      </div>
+      <div className="vn-profile-identity">
+        <span className="vn-profile-portrait">J</span>
+        <div>
+          <h2>Jamie</h2>
+          <p>2 recordings</p>
+        </div>
+      </div>
+      <div className="vn-profile-appearance">
+        <a href="#demo">
+          <FileTextIcon />
+          <span>Launch review</span>
+          <ArrowRightIcon />
+        </a>
+        <motion.blockquote variants={sourceEmphasis}>
+          “We need the <strong>review complete</strong> before launch.”
+        </motion.blockquote>
+        <span className="vn-profile-source">
+          <span className="vn-speaker-dot" /> Jamie <time>00:08</time>
+        </span>
+      </div>
+      <div className="vn-profile-appearance">
+        <div className="vn-profile-source-title">
+          <FileTextIcon />
+          <span>Scope review</span>
+        </div>
+        <blockquote>“The review needs to cover the revised scope.”</blockquote>
+        <span className="vn-profile-source">
+          <span className="vn-speaker-dot" /> Jamie <time>01:12</time>
+        </span>
+      </div>
+    </motion.figure>
+  );
+}
+
+function ConversationContextDemo({ reduceMotion }: { reduceMotion: boolean }) {
+  return (
+    <motion.figure
+      className="vn-profile-demo vn-followup-demo"
+      aria-label="Planned profile enrichment and conversation preparation demo"
+      initial="rest"
+      whileInView={reduceMotion ? "rest" : "play"}
+      viewport={{ once: true, amount: 0.4 }}
+    >
+      <div className="vn-profile-demo-top">
+        <span>NEXT CONVERSATION</span>
+        <span>PLANNED</span>
+      </div>
+      <div className="vn-followup-content">
+        <h2>Follow-up with Jamie</h2>
+        <motion.div className="vn-followup-context" variants={reveal} custom={0.6}>
+          <h3>Profile context</h3>
+          <p>
+            <strong>Review required</strong> before launch.
+          </p>
+          <a href="#demo">
+            Launch review · 00:08 <ArrowRightIcon aria-hidden="true" />
+          </a>
+        </motion.div>
+        <motion.span className="vn-followup-arrow" aria-hidden="true" variants={reveal} custom={1}>
+          ↓
+        </motion.span>
+        <motion.div className="vn-followup-question" variants={reveal} custom={1.35}>
+          <h3>Suggested follow-up</h3>
+          <p>Has the review cleared?</p>
+        </motion.div>
+      </div>
+    </motion.figure>
   );
 }
 
@@ -146,7 +294,12 @@ export function LandingPage({
   onCheckSignIn: () => void;
 }) {
   const [signInOpen, setSignInOpen] = useState(false);
-  const [corrected, setCorrected] = useState(false);
+  const [replay, setReplay] = useState(0);
+  const reduceMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotion,
+    getServerReducedMotion,
+  );
   const signInTrigger = useRef<HTMLButtonElement | null>(null);
   function openSignIn(event: MouseEvent<HTMLButtonElement>) {
     signInTrigger.current = event.currentTarget;
@@ -162,9 +315,6 @@ export function LandingPage({
           <Brand />
         </a>
         <nav aria-label="Main navigation">
-          <a href="#how-it-works" className="vn-landing-how-link">
-            How it works
-          </a>
           <Button variant="outline" onClick={openSignIn}>
             Sign in <ArrowRightIcon data-icon="inline-end" />
           </Button>
@@ -180,120 +330,48 @@ export function LandingPage({
           </div>
         )}
         <section className="vn-landing-hero" aria-labelledby="landing-title">
-          <p className="vn-landing-eyebrow">
-            <span className="vn-status-dot" /> A QUIET SPACE FOR YOUR CONVERSATIONS
+          <motion.h1
+            id="landing-title"
+            variants={reveal}
+            initial="rest"
+            animate={reduceMotion ? "rest" : "play"}
+          >
+            Every conversation <br />
+            builds <strong>reusable context.</strong>
+          </motion.h1>
+          <p className="vn-landing-description">
+            Make more of the conversation. <em>Even the parts you missed.</em>
           </p>
-          <h1 id="landing-title">
-            Stay in the
-            <br />
-            <span>conversation.</span>
-          </h1>
-          <p className="vn-landing-description">Record it. Come back to every word.</p>
           <div className="vn-landing-hero-actions">
-            <Button size="lg" onClick={openSignIn}>
+            <MotionButton
+              size="lg"
+              onClick={openSignIn}
+              whileHover={reduceMotion ? {} : { y: -2 }}
+              whileTap={reduceMotion ? {} : { scale: 0.98 }}
+            >
               Get started <ArrowRightIcon data-icon="inline-end" />
-            </Button>
-            <a href="#demo">
-              Take a closer look <span aria-hidden="true">↘</span>
-            </a>
+            </MotionButton>
           </div>
         </section>
         <div id="demo" className="vn-landing-demo-wrap">
-          <ProductDemo />
+          <ProductDemo
+            replay={replay}
+            onReplay={() => setReplay((value) => value + 1)}
+            reduceMotion={reduceMotion}
+          />
         </div>
         <section
-          id="how-it-works"
-          className="vn-landing-features"
-          aria-label="From conversation to note"
+          key={replay}
+          className="vn-landing-details"
+          aria-label="Profiles and planned follow-ups"
         >
-          <article className="vn-landing-feature">
-            <div className="vn-feature-heading">
-              <span>01</span>
-              <h2>Capture.</h2>
-            </div>
-            <p>Press record. Or bring your audio.</p>
-            <div
-              className="vn-feature-visual vn-feature-capture"
-              role="img"
-              aria-label="Illustration of an audio recording waveform"
-            >
-              <div className="vn-mini-recording">
-                <span className="vn-record-dot" />
-                <span>Recording</span>
-                <span>00:42</span>
-              </div>
-              <Waveform small />
-              <div className="vn-mini-recording-footer">
-                <span>Just let it flow.</span>
-                <span className="vn-record-stop" />
-              </div>
-            </div>
-          </article>
-          <article className="vn-landing-feature">
-            <div className="vn-feature-heading">
-              <span>02</span>
-              <h2>Follow along.</h2>
-            </div>
-            <p>Every voice. A place on the page.</p>
-            <div
-              className="vn-feature-visual vn-feature-speakers"
-              role="img"
-              aria-label="Illustration of a transcript with separate speakers"
-            >
-              <div>
-                <span className="vn-mini-avatar">J</span>
-                <div>
-                  <span>
-                    Jamie <small>00:08</small>
-                  </span>
-                  <i />
-                  <i />
-                </div>
-              </div>
-              <div>
-                <span className="vn-mini-avatar is-second">A</span>
-                <div>
-                  <span>
-                    Alex <small>00:16</small>
-                  </span>
-                  <i />
-                  <i />
-                </div>
-              </div>
-            </div>
-          </article>
-          <article className="vn-landing-feature">
-            <div className="vn-feature-heading">
-              <span>03</span>
-              <h2>Make it right.</h2>
-            </div>
-            <p>A different speaker? One small edit.</p>
-            <div className="vn-feature-visual vn-feature-correction">
-              <span className="vn-correction-label">SAMPLE SPEAKER EDIT</span>
-              <span className="vn-correction-quote">“Let’s start there.”</span>
-              <div className="vn-correction-action">
-                <span aria-live="polite">
-                  <PersonIcon /> {corrected ? "Jamie" : "Alex"}
-                </span>
-                <Button variant="outline" size="sm" onClick={() => setCorrected((value) => !value)}>
-                  {corrected ? "Undo" : "Assign to Jamie"}
-                  {corrected && <CheckIcon data-icon="inline-end" />}
-                </Button>
-              </div>
-            </div>
-          </article>
-        </section>
-        <section className="vn-landing-closing" aria-label="Get started">
-          <p>Good conversations deserve a place.</p>
-          <Button variant="outline" onClick={openSignIn}>
-            Make room for yours <ArrowRightIcon data-icon="inline-end" />
-          </Button>
+          <ProfileDemo reduceMotion={reduceMotion} />
+          <ConversationContextDemo reduceMotion={reduceMotion} />
         </section>
       </main>
       <footer className="vn-landing-footer">
         <Brand />
-        <span>A little less lost. A little more kept.</span>
-        <span>© {new Date().getFullYear()} VoidNote</span>
+        <span>© {new Date().getFullYear()} The Null Node</span>
       </footer>
       <Dialog open={signInOpen} onOpenChange={setSignInOpen}>
         <DialogContent

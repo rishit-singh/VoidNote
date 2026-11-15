@@ -13,10 +13,18 @@ const mono = IBM_Plex_Mono({
   variable: "--font-ibm-plex-mono",
 });
 
+const monoItalic = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: "400",
+  style: "italic",
+  display: "swap",
+  variable: "--font-ibm-plex-mono-italic",
+});
+
 export const metadata: Metadata = {
   title: "VoidNote",
   description:
-    "Stay in the conversation. Record it, turn it into a speaker-labelled transcript, and come back to every word with VoidNote.",
+    "Transcribe recordings, connect speakers to profiles, and revisit their words across conversations. Explore VoidNote’s plans for source-linked context and conversation preparation.",
 };
 
 export default function RootLayout({
@@ -25,7 +33,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark ${mono.variable}`} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`dark ${mono.variable} ${monoItalic.variable}`}
+      suppressHydrationWarning
+    >
       <body>
         <ThemeProvider defaultTheme="dark" storageKey="voidnote-theme">
           <QueryProvider>{children}</QueryProvider>

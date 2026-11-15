@@ -8,6 +8,7 @@ import {
   correctedTurnSchema,
   MAX_CORRECTION_TARGETS,
   type CorrectionCommand,
+  type CorrectionResult,
   type CorrectedTurn,
 } from "../contracts/transcript-corrections";
 import { idSchema, WorkspaceError, type Principal } from "../contracts/workspace";
@@ -302,6 +303,64 @@ async function requirePeople(tx: Transaction, workspaceId: string, ids: string[]
   return new Map(rows.map((row) => [row.id, row.name]));
 }
 
+async function correctionResult(
+  tx: Transaction,
+  workspaceId: string,
+  runId: string,
+  recordingId: string,
+  correction: typeof corrections.$inferSelect,
+): Promise<CorrectionResult> {
+  const resultReceipt = receipt(correction);
+  const incomplete: CorrectionResult = {
+    receipt: resultReceipt,
+    current: { items: [], removed: [], complete: false },
+  };
+  // Historical snapshots identify the scope only. Read current rows while the
+  // authorized run lock is held, including on an exact command replay.
+  const ids = [...new Set([...correction.before, ...correction.after].map((turn) => turn.id))];
+  if (!ids.length || ids.length > MAX_CORRECTION_TARGETS) return incomplete;
+
+  const metadata = await segmentMetadata(
+    tx,
+    workspaceId,
+    runId,
+    inArray(segments.id, ids),
+    MAX_CORRECTION_TARGETS,
+  );
+  // Use the page's conservative per-row allowance before loading large strings.
+  // An oversized current projection must not turn a committed replay into failure.
+  const estimatedBytes = metadata.reduce(
+    (bytes, row) => bytes + (row.active ? row.textBytes + 4096 : 256),
+    4096,
+  );
+  if (metadata.length !== ids.length || estimatedBytes > MAX_PAGE_BYTES) return incomplete;
+
+  const activeIds = metadata.filter((row) => row.active).map((row) => row.id);
+  const current = activeIds.length
+    ? await readSegments(
+        tx,
+        workspaceId,
+        runId,
+        recordingId,
+        and(inArray(segments.id, activeIds), eq(segments.active, true)),
+        MAX_CORRECTION_TARGETS,
+      )
+    : [];
+  if (current.length !== activeIds.length) return incomplete;
+
+  const result: CorrectionResult = {
+    receipt: resultReceipt,
+    current: {
+      items: current.map(publicTurn),
+      removed: metadata
+        .filter((row) => !row.active)
+        .map(({ id, revision, attributionRevision }) => ({ id, revision, attributionRevision })),
+      complete: true,
+    },
+  };
+  return Buffer.byteLength(JSON.stringify(result)) <= MAX_PAGE_BYTES ? result : incomplete;
+}
+
 async function persistSegments(tx: Transaction, workspaceId: string, snapshots: Snapshot[]) {
   // Retire before inserting replacements so the active-lineage unique index also
   // permits a fresh split after an earlier split was undone.
@@ -545,7 +604,7 @@ export function createTranscriptCorrectionRepository(db: Database) {
               "command_reused",
               "Command ID already identifies another correction.",
             );
-          return receipt(existing);
+          return correctionResult(tx, workspaceId, runId, recording.id, existing);
         }
         await materialize(tx, run);
         let before: Snapshot[];
@@ -957,7 +1016,7 @@ export function createTranscriptCorrectionRepository(db: Database) {
         await tx
           .insert(transcriptCorrectionOutbox)
           .values({ workspaceId, correctionId: saved!.id });
-        return receipt(saved!);
+        return correctionResult(tx, workspaceId, runId, recording.id, saved!);
       });
     },
 

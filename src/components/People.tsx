@@ -6,6 +6,7 @@ import { getQueryRuntime } from "@/lib/query-runtime";
 import { ApiError, asApiError } from "@/lib/api-error";
 import { usePeopleQuery } from "@/hooks/use-workspace-queries";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { PERSON_DESCRIPTION_PREVIEW_LENGTH } from "@/contracts/people";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MagnifyingGlassIcon } from "@radix-ui/react-icons";
@@ -28,6 +29,7 @@ export function People({ profileId }: { profileId?: string }) {
   const personRecords = useNoteStore((state) => state.personRecords);
   const currentId = useNoteStore((state) => state.currentPersonId);
   const edits = useNoteStore((state) => state.edits);
+  const unavailableRecords = useNoteStore((state) => state.unavailable);
   const createPerson = useNoteStore((state) => state.createPerson);
   const ready = useNoteStore((state) => state.status === "ready");
   const selectPerson = useNoteStore((state) => state.selectPerson);
@@ -60,7 +62,8 @@ export function People({ profileId }: { profileId?: string }) {
         ? "forbidden"
         : "missing"
       : undefined;
-  const unavailableReason = detailUnavailable ?? storedUnavailable;
+  const unavailableReason =
+    detailUnavailable ?? (detail.data?.deletedAt ? "missing" : storedUnavailable);
   const missing = !!unavailableReason;
   const unavailable: Record<string, string> = unavailableReason
     ? { [`person:${selectedId}`]: unavailableReason }
@@ -72,7 +75,7 @@ export function People({ profileId }: { profileId?: string }) {
     : detail.status === "success" && detail.data && !edit?.dirty && !edit?.pending
       ? { ...detail.data, scopeEpoch: epoch }
       : draft;
-  const locked = !!edit?.pending || !!edit?.saving;
+  const locked = edit?.pending?.kind === "delete" || (!!edit?.saving && !edit.pending);
   const normalizedSearch = search.trim().toLocaleLowerCase();
   const drafts = people.filter(
     (entry) =>
@@ -82,12 +85,20 @@ export function People({ profileId }: { profileId?: string }) {
   );
   const draftIds = new Set(drafts.map((entry) => entry.id));
   const filteredPeople = [
-    ...drafts,
+    ...drafts.map((entry) => ({
+      id: entry.id,
+      displayName: entry.displayName,
+      descriptionPreview: Array.from(entry.description)
+        .slice(0, PERSON_DESCRIPTION_PREVIEW_LENGTH)
+        .join(""),
+    })),
     ...(results.data?.pages.flatMap((page) => page.items) ?? []).filter(
       (entry) => !draftIds.has(entry.id),
     ),
-  ].filter((entry) =>
-    (entry.displayName || "Untitled profile").toLocaleLowerCase().startsWith(normalizedSearch),
+  ].filter(
+    (entry) =>
+      !unavailableRecords[`person:${entry.id}`] &&
+      (entry.displayName || "Untitled profile").toLocaleLowerCase().startsWith(normalizedSearch),
   );
 
   useEffect(() => {
@@ -212,7 +223,7 @@ export function People({ profileId }: { profileId?: string }) {
                   {entry.displayName || "Untitled profile"}
                   {edits[`person:${entry.id}`]?.dirty ? " ·" : ""}
                 </span>
-                <small>{entry.description || "Profile"}</small>
+                <small>{entry.descriptionPreview || "Profile"}</small>
               </span>
               <span className="vn-trailing" aria-hidden="true">
                 ›

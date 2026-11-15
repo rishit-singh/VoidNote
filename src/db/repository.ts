@@ -3,22 +3,25 @@ import { and, asc, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
 import {
+  PERSON_DESCRIPTION_PREVIEW_LENGTH,
+  peopleQuerySchema,
+  personSchema,
+  savePersonSchema,
+  type PeopleQuery,
+  type PersonRecord,
+} from "../contracts/people";
+import {
   deleteSchema,
   idSchema,
   notesQuerySchema,
   listQuerySchema,
   noteSchema,
-  peopleQuerySchema,
-  personSchema,
   saveNoteSchema,
-  savePersonSchema,
   WorkspaceError,
   type DeleteCommand,
   type NotesQuery,
   type ListQuery,
   type NoteRecord,
-  type PeopleQuery,
-  type PersonRecord,
   type Principal,
   type SaveNote,
   type SavePerson,
@@ -41,25 +44,35 @@ export type Database = PostgresJsDatabase<typeof schema>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type EntityType = "note" | "person";
 
-const noteColumns = {
+const noteListColumns = {
   id: notes.id,
   workspaceId: notes.workspaceId,
   revision: notes.revision,
   title: notes.title,
-  transcript: notes.transcript,
   createdAt: notes.createdAt,
   updatedAt: notes.updatedAt,
   deletedAt: notes.deletedAt,
 };
-const personColumns = {
+const noteColumns = {
+  ...noteListColumns,
+  transcript: notes.transcript,
+};
+const personMetadataColumns = {
   id: people.id,
   workspaceId: people.workspaceId,
   revision: people.revision,
   displayName: people.displayName,
-  description: people.description,
   createdAt: people.createdAt,
   updatedAt: people.updatedAt,
   deletedAt: people.deletedAt,
+};
+const personColumns = {
+  ...personMetadataColumns,
+  description: people.description,
+};
+const personListColumns = {
+  ...personMetadataColumns,
+  descriptionPreview: sql<string>`left(${people.description}, ${PERSON_DESCRIPTION_PREVIEW_LENGTH})`,
 };
 
 function recordDates<T extends { createdAt: Date; updatedAt: Date; deletedAt: Date | null }>(
@@ -80,7 +93,13 @@ const noteCursor = cursorBase.extend({
   updatedAt: z.iso.datetime(),
   queryHash: z.string().length(64),
 });
-const personCursor = cursorBase.extend({ kind: z.literal("people"), id: idSchema });
+// Unbound legacy people cursors are rejected: restart at page one after this cutover.
+// Accepting them cannot guarantee continuation within the original exact search.
+const personCursor = cursorBase.extend({
+  kind: z.literal("people"),
+  id: idSchema,
+  queryHash: z.string().length(64),
+});
 const historyCursor = cursorBase.extend({
   kind: z.literal("history"),
   entityType: z.enum(["note", "person"]),
@@ -316,7 +335,7 @@ export function createWorkspaceRepository(db: Database) {
           throw new WorkspaceError("invalid_cursor", "Cursor belongs to another search");
         const prefix = q.toLowerCase().replace(/[\\%_]/g, "\\$&");
         const rows = await tx
-          .select(noteColumns)
+          .select(noteListColumns)
           .from(notes)
           .where(
             and(
@@ -417,9 +436,14 @@ export function createWorkspaceRepository(db: Database) {
       return read(principal, workspaceId, async (tx) => {
         const { limit, cursor, q } = peopleQuerySchema.parse(query);
         const after = decodeCursor(cursor, personCursor, workspaceId);
+        const queryHash = await fingerprint(q);
+        if (after && after.queryHash !== queryHash) {
+          throw new WorkspaceError("invalid_cursor", "Cursor belongs to another search");
+        }
+
         const prefix = q.toLowerCase().replace(/[\\%_]/g, "\\$&");
         const rows = await tx
-          .select(personColumns)
+          .select(personListColumns)
           .from(people)
           .where(
             and(
@@ -437,7 +461,7 @@ export function createWorkspaceRepository(db: Database) {
           items,
           nextCursor:
             rows.length > limit && last
-              ? encodeCursor({ v: 1, kind: "people", workspaceId, id: last.id })
+              ? encodeCursor({ v: 1, kind: "people", workspaceId, id: last.id, queryHash })
               : null,
         };
       });

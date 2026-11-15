@@ -1,7 +1,12 @@
 import { z } from "zod";
-import { type DeleteCommand, type SaveNote, type SavePerson } from "@/contracts/workspace";
-import { getQueryRuntime, notifyQueryChange } from "./query-runtime";
+
+import { queryPolicy } from "@/config/query";
+import { type DeleteCommand } from "@/contracts/workspace";
+import { saveNote } from "@/queries/notes";
+import { deletePerson, savePerson } from "@/queries/people";
+
 import { ApiError, rpcCall } from "./api-error";
+import { getQueryRuntime, notifyQueryChange } from "./query-runtime";
 export { ApiError } from "./api-error";
 
 /** Compatibility boundary for durable draft commands; remote reads live in QueryClient. */
@@ -9,9 +14,10 @@ export const workspaceApi = {
   session: () =>
     rpcCall(() => {
       const { queryClient, trpc } = getQueryRuntime();
+
       return queryClient.fetchQuery(
         trpc.workspace.session.queryOptions(undefined, {
-          staleTime: 30_000,
+          staleTime: queryPolicy.staleTimeMs,
           trpc: { abortOnUnmount: true },
         }),
       );
@@ -22,15 +28,24 @@ export const workspaceApi = {
       credentials: "same-origin",
       cache: "no-store",
     });
-    if (!response.ok) throw new ApiError("Sign-out could not be confirmed.", response.status);
+    if (!response.ok) {
+      throw new ApiError("Sign-out could not be confirmed.", response.status);
+    }
+
     return z.object({ ok: z.literal(true) }).parse(await response.json());
   },
   notes: (workspaceId: string, cursor?: string | null, q?: string) =>
     rpcCall(() => {
       const { queryClient, trpc } = getQueryRuntime();
+
       return queryClient.fetchQuery(
         trpc.notes.list.queryOptions(
-          { workspaceId, ...(cursor ? { cursor } : {}), ...(q ? { q } : {}), limit: 30 },
+          {
+            workspaceId,
+            ...(cursor ? { cursor } : {}),
+            ...(q ? { q } : {}),
+            limit: queryPolicy.notesPageSize,
+          },
           { trpc: { abortOnUnmount: true } },
         ),
       );
@@ -38,33 +53,26 @@ export const workspaceApi = {
   note: (workspaceId: string, id: string, includeDeleted = false) =>
     rpcCall(() => {
       const { queryClient, trpc } = getQueryRuntime();
+
       return queryClient.fetchQuery(
         trpc.notes.get.queryOptions(
           { workspaceId, id, includeDeleted },
-          { staleTime: includeDeleted ? 0 : 30_000, trpc: { abortOnUnmount: true } },
+          {
+            staleTime: includeDeleted ? 0 : queryPolicy.staleTimeMs,
+            trpc: { abortOnUnmount: true },
+          },
         ),
       );
     }),
-  saveNote: (workspaceId: string, command: SaveNote) =>
-    rpcCall(async () => {
-      const runtime = getQueryRuntime();
-      const note = await runtime.client.notes.save.mutate({ workspaceId, command });
-      if (runtime !== getQueryRuntime()) return note;
-      await runtime.queryClient.cancelQueries(
-        runtime.trpc.notes.get.queryFilter({ workspaceId, id: note.id }),
-      );
-      runtime.queryClient.setQueryData(
-        runtime.trpc.notes.get.queryKey({ workspaceId, id: note.id, includeDeleted: false }),
-        (previous) => (previous && previous.revision > note.revision ? previous : note),
-      );
-      await notifyQueryChange("notes", { workspaceId, id: note.id }, runtime, true);
-      return note;
-    }),
+  saveNote,
   deleteNote: (workspaceId: string, command: DeleteCommand) =>
     rpcCall(async () => {
       const runtime = getQueryRuntime();
       const note = await runtime.client.notes.delete.mutate({ workspaceId, command });
-      if (runtime !== getQueryRuntime()) return note;
+      if (runtime !== getQueryRuntime()) {
+        return note;
+      }
+
       await runtime.queryClient.cancelQueries(
         runtime.trpc.notes.get.queryFilter({ workspaceId, id: note.id }),
       );
@@ -90,14 +98,21 @@ export const workspaceApi = {
         runtime.trpc.transcripts.page.infiniteQueryFilter({ workspaceId, noteId: note.id }),
       );
       await notifyQueryChange("notes", { workspaceId, id: note.id }, runtime);
+
       return note;
     }),
   people: (workspaceId: string, cursor?: string | null, q?: string) =>
     rpcCall(() => {
       const { queryClient, trpc } = getQueryRuntime();
+
       return queryClient.fetchQuery(
         trpc.people.list.queryOptions(
-          { workspaceId, ...(cursor ? { cursor } : {}), ...(q ? { q } : {}), limit: 30 },
+          {
+            workspaceId,
+            ...(cursor ? { cursor } : {}),
+            ...(q ? { q } : {}),
+            limit: queryPolicy.peoplePageSize,
+          },
           { trpc: { abortOnUnmount: true } },
         ),
       );
@@ -105,42 +120,19 @@ export const workspaceApi = {
   person: (workspaceId: string, id: string, includeDeleted = false) =>
     rpcCall(() => {
       const { queryClient, trpc } = getQueryRuntime();
+
       return queryClient.fetchQuery(
         trpc.people.get.queryOptions(
           { workspaceId, id, includeDeleted },
-          { staleTime: includeDeleted ? 0 : 30_000, trpc: { abortOnUnmount: true } },
+          {
+            staleTime: includeDeleted ? 0 : queryPolicy.staleTimeMs,
+            trpc: { abortOnUnmount: true },
+          },
         ),
       );
     }),
-  savePerson: (workspaceId: string, command: SavePerson) =>
-    rpcCall(async () => {
-      const runtime = getQueryRuntime();
-      const person = await runtime.client.people.save.mutate({ workspaceId, command });
-      if (runtime !== getQueryRuntime()) return person;
-      await runtime.queryClient.cancelQueries(
-        runtime.trpc.people.get.queryFilter({ workspaceId, id: person.id }),
-      );
-      runtime.queryClient.setQueryData(
-        runtime.trpc.people.get.queryKey({ workspaceId, id: person.id, includeDeleted: false }),
-        (previous) => (previous && previous.revision > person.revision ? previous : person),
-      );
-      await notifyQueryChange("people", { workspaceId, id: person.id }, runtime, true);
-      return person;
-    }),
-  deletePerson: (workspaceId: string, command: DeleteCommand) =>
-    rpcCall(async () => {
-      const runtime = getQueryRuntime();
-      const person = await runtime.client.people.delete.mutate({ workspaceId, command });
-      if (runtime !== getQueryRuntime()) return person;
-      await runtime.queryClient.cancelQueries(
-        runtime.trpc.people.get.queryFilter({ workspaceId, id: person.id }),
-      );
-      runtime.queryClient.removeQueries(
-        runtime.trpc.people.get.queryFilter({ workspaceId, id: person.id }),
-      );
-      await notifyQueryChange("people", { workspaceId, id: person.id }, runtime);
-      return person;
-    }),
+  savePerson,
+  deletePerson,
   history: (
     workspaceId: string,
     entityType: "note" | "person",
@@ -149,6 +141,7 @@ export const workspaceApi = {
   ) =>
     rpcCall(() => {
       const { queryClient, trpc } = getQueryRuntime();
+
       return queryClient.fetchQuery(
         trpc.workspace.history.queryOptions(
           { workspaceId, entityType, entityId, ...(cursor ? { cursor } : {}) },

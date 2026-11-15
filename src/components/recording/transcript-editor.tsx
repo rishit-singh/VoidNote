@@ -86,16 +86,22 @@ function ScopedTranscriptEditor({ noteId, runId, onSeek }: Props) {
       <AlertDescription className="flex flex-wrap items-center gap-3">
         <span>
           {api.busy
-            ? "Saving…"
-            : api.conflict
-              ? "This speech changed. Review it and try again."
-              : api.error || "Could not confirm your change."}
+            ? api.pending?.command.kind === "undo"
+              ? "Undoing…"
+              : "Saving… Undo is available after confirmation."
+            : api.error ||
+              (api.conflict
+                ? "This speech changed. Review it and try again."
+                : "Could not confirm your change.")}
         </span>
         {!api.busy && api.pending && (
           <Button
             variant="outline"
             onClick={() => {
-              if (api.rejected) void api.reviewConflict().then(saved);
+              if (api.rejected)
+                void api.reviewConflict().then((ok) => {
+                  if (ok) saved();
+                });
               else
                 void api.submit().then((ok) => {
                   if (ok) saved();
@@ -119,7 +125,7 @@ function ScopedTranscriptEditor({ noteId, runId, onSeek }: Props) {
         <TranscriptDownload noteId={noteId} runId={runId} disabled={locked} />
       </div>
       {!editing && recovery}
-      {api.receipt && (
+      {api.receipt && !api.pending && (
         <div role="status" className="flex items-center gap-2 text-meta text-muted-foreground">
           <span>{api.receipt.kind === "undo" ? "Undone" : "Speaker updated"}</span>
           {api.receipt.kind !== "undo" && (
@@ -301,7 +307,7 @@ function ScopedTranscriptEditor({ noteId, runId, onSeek }: Props) {
                 api={api}
                 onAssign={
                   editing.turns && editing.turns.length > 1
-                    ? (assignment, guest) =>
+                    ? (assignment, guest, options) =>
                         api.submit(
                           {
                             kind: "assign",
@@ -313,6 +319,7 @@ function ScopedTranscriptEditor({ noteId, runId, onSeek }: Props) {
                             assignment,
                           },
                           guest,
+                          options,
                         )
                     : undefined
                 }

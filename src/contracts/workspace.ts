@@ -1,48 +1,37 @@
 import { z } from "zod";
 
+// Bounded facade for existing mixed workspace callers; each domain owns its contracts.
+export {
+  noteContentSchema,
+  noteListItemSchema,
+  noteListSchema,
+  noteSchema,
+  notesQuerySchema,
+  saveNoteSchema,
+} from "./notes";
+export type { NoteListItem, NoteRecord, NotesQuery, SaveNote } from "./notes";
+export {
+  PERSON_DESCRIPTION_PREVIEW_LENGTH,
+  peopleQuerySchema,
+  personContentSchema,
+  personListItemSchema,
+  personListSchema,
+  personSchema,
+  savePersonSchema,
+  toPersonListItem,
+} from "./people";
+export type { PeopleQuery, PersonListItem, PersonRecord, SavePerson } from "./people";
+
 export const idSchema = z.uuid();
-export const noteContentSchema = z.object({
-  title: z.string().max(300),
-  transcript: z.string().max(500_000),
-});
-export const personContentSchema = z.object({
-  displayName: z.string().trim().min(1).max(200),
-  description: z.string().max(5_000),
-});
-const recordFields = {
-  id: idSchema,
-  workspaceId: idSchema,
-  revision: z.number().int().positive(),
-  createdAt: z.iso.datetime({ offset: true }),
-  updatedAt: z.iso.datetime({ offset: true }),
-  deletedAt: z.iso.datetime({ offset: true }).nullable(),
-};
-export const noteSchema = noteContentSchema.extend(recordFields);
-export const personSchema = personContentSchema.extend(recordFields);
 const commandFields = {
   commandId: idSchema,
   id: idSchema,
   expectedRevision: z.number().int().min(0).max(2_147_483_646),
 };
-export const saveNoteSchema = z.object({ ...commandFields, content: noteContentSchema }).strict();
-export const savePersonSchema = z
-  .object({ ...commandFields, content: personContentSchema })
-  .strict();
 export const deleteSchema = z.object(commandFields).strict();
 export const listQuerySchema = z.object({
   cursor: z.string().max(500).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(30),
-});
-export const peopleQuerySchema = listQuerySchema.extend({ q: z.string().max(200).default("") });
-// Literal, case-insensitive title prefix; not full-text or substring search.
-export const notesQuerySchema = listQuerySchema.extend({ q: z.string().max(300).default("") });
-export const noteListSchema = z.object({
-  items: z.array(noteSchema),
-  nextCursor: z.string().nullable(),
-});
-export const personListSchema = z.object({
-  items: z.array(personSchema),
-  nextCursor: z.string().nullable(),
 });
 export const eventSchema = z.object({
   id: idSchema,
@@ -64,14 +53,8 @@ export const sessionSchema = z.object({
   workspace: z.object({ id: idSchema, name: z.string() }),
 });
 export type Principal = { id: string; email: string | null };
-export type NoteRecord = z.infer<typeof noteSchema>;
-export type PersonRecord = z.infer<typeof personSchema>;
-export type SaveNote = z.infer<typeof saveNoteSchema>;
-export type SavePerson = z.infer<typeof savePersonSchema>;
 export type DeleteCommand = z.infer<typeof deleteSchema>;
-export type NotesQuery = z.infer<typeof notesQuerySchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;
-export type PeopleQuery = z.infer<typeof peopleQuerySchema>;
 export type Session = z.infer<typeof sessionSchema>;
 
 export class WorkspaceError extends Error {

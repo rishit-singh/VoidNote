@@ -125,7 +125,7 @@ export function SpeechSelection({
         turn={turn}
         api={api}
         onSaved={onSaved}
-        onAssign={(assignment, guest) => {
+        onAssign={(assignment, guest, options) => {
           if (range.startOffset === 0 && range.endOffset === turn.text.length)
             return api.submit(
               {
@@ -135,6 +135,7 @@ export function SpeechSelection({
                 assignment,
               },
               guest,
+              options,
             );
           return api.submit(
             {
@@ -149,6 +150,7 @@ export function SpeechSelection({
               selection: { ...range, selectedId: crypto.randomUUID(), assignment },
             },
             guest,
+            options,
           );
         }}
       />

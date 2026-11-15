@@ -28,7 +28,7 @@ import {
   correctedTranscriptPageSchema,
   correctionCommandSchema,
   correctionHistoryPageSchema,
-  correctionReceiptSchema,
+  correctionResultSchema,
   correctionTargetsSchema,
   personAppearancesSchema,
 } from "@/contracts/transcript-corrections";
@@ -243,7 +243,7 @@ export const appRouter = router({
       ),
     command: procedure
       .input(runScope.extend({ command: correctionCommandSchema }))
-      .output(correctionReceiptSchema)
+      .output(correctionResultSchema)
       .mutation(({ ctx, input }) =>
         correction((repo) =>
           repo.command(ctx.principal, input.workspaceId, input.noteId, input.runId, input.command),

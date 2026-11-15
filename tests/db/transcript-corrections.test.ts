@@ -14,6 +14,7 @@ import {
   type CorrectionCommand,
   type CorrectedTurn,
   correctionHistoryPageSchema,
+  correctionResultSchema,
   correctedTranscriptPageSchema,
   personAppearancesSchema,
 } from "../../src/contracts/transcript-corrections";
@@ -199,6 +200,15 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       },
     };
     const receipt = await s.command(command);
+    assert.deepEqual(correctionResultSchema.parse(JSON.parse(JSON.stringify(receipt))), receipt);
+    assert.equal(receipt.current.complete, true);
+    assert.deepEqual(
+      receipt.current.items.map((turn) => turn.orderKey),
+      ["00", "01", "1"],
+    );
+    assert.deepEqual(receipt.current.removed, [
+      { id: original.id, revision: 1, attributionRevision: 1 },
+    ]);
     assert.deepEqual(await s.command(command), receipt);
     const children = (await s.page()).items.filter((t) => t.parentId === original.id);
     assert.equal(children.length, 3);
@@ -209,11 +219,176 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     assert.equal(children[2]!.assignment.kind, "unassigned");
     assert.deepEqual(await counts(s.workspaceId), { batches: 1, outbox: 1, samples: 1 });
     await assert.rejects(s.command({ ...command, commandId: randomUUID() }), code("conflict"));
-    await s.command({ kind: "undo", commandId: randomUUID(), correctionId: receipt.id });
+    const undo = await s.command({
+      kind: "undo",
+      commandId: randomUUID(),
+      correctionId: receipt.receipt.id,
+    });
     const restored = (await s.page()).items;
     assert.equal(restored.length, 3);
     assert.equal(restored[0]!.id, original.id);
     assert.equal(restored[0]!.text, original.text);
+    const replay = await s.command(command);
+    assert.deepEqual(replay.receipt, receipt.receipt);
+    assert.deepEqual(replay.current, undo.current);
+    assert.deepEqual(replay.current.items, [restored[0]]);
+    assert.deepEqual(
+      replay.current.removed,
+      children.map(({ id }) => ({ id, revision: 2, attributionRevision: 2 })),
+    );
+  });
+
+  void it("replays immutable receipts with current edits, tombstones and exact-ID coverage after nested splits and undo", async () => {
+    const s = await fixture();
+    const original = (await s.page()).items[0]!;
+    const assignment = assign([original], s.person.id);
+    const assigned = await s.command(assignment);
+    const edit: CorrectionCommand = {
+      kind: "edit",
+      commandId: randomUUID(),
+      utteranceId: original.id,
+      expectedRevision: 1,
+      text: "Hello Ada and Grace, corrected",
+      startSeconds: original.startSeconds,
+      endSeconds: original.endSeconds,
+    };
+    const edited = await s.command(edit);
+    const afterEdit = await s.command(assignment);
+    assert.deepEqual(afterEdit.receipt, assigned.receipt);
+    assert.deepEqual(afterEdit.current, edited.current);
+    assert.equal(afterEdit.current.items[0]!.revision, 2);
+    assert.equal(afterEdit.current.items[0]!.text, edit.text);
+
+    const splitCommand: CorrectionCommand = {
+      kind: "split",
+      commandId: randomUUID(),
+      utteranceId: original.id,
+      expectedRevision: 2,
+      splitSeconds: 2,
+      textOffset: 9,
+      leftId: randomUUID(),
+      rightId: randomUUID(),
+    };
+    const split = await s.command(splitCommand);
+    const afterSplit = await s.command(assignment);
+    assert.deepEqual(afterSplit.receipt, assigned.receipt);
+    assert.deepEqual(afterSplit.current, {
+      items: [],
+      removed: [{ id: original.id, revision: 3, attributionRevision: 2 }],
+      complete: true,
+    });
+    // "Complete" covers the receipt IDs only; a refresh discovers new descendants.
+    const [left, right] = split.current.items;
+    assert.ok(left && right);
+    const newerLeft = await s.command({
+      kind: "edit",
+      commandId: randomUUID(),
+      utteranceId: left.id,
+      expectedRevision: left.revision,
+      text: "Newest left words",
+      startSeconds: left.startSeconds,
+      endSeconds: left.endSeconds,
+    });
+    const nested = await s.command({
+      kind: "split",
+      commandId: randomUUID(),
+      utteranceId: right.id,
+      expectedRevision: right.revision,
+      splitSeconds: 3,
+      textOffset: 3,
+      leftId: randomUUID(),
+      rightId: randomUUID(),
+    });
+    const afterNested = correctionResultSchema.parse(
+      JSON.parse(JSON.stringify(await s.command(splitCommand))),
+    );
+    assert.deepEqual(afterNested.receipt, split.receipt);
+    assert.deepEqual(afterNested.current.items, newerLeft.current.items);
+    assert.deepEqual(afterNested.current.removed, [
+      { id: original.id, revision: 3, attributionRevision: 2 },
+      { id: right.id, revision: 4, attributionRevision: 3 },
+    ]);
+    assert.equal(afterNested.current.complete, true);
+    assert.ok(
+      nested.current.items.every(
+        (turn) => !afterNested.current.items.some((item) => item.id === turn.id),
+      ),
+    );
+
+    const undoCommand: CorrectionCommand = {
+      kind: "undo",
+      commandId: randomUUID(),
+      correctionId: nested.receipt.id,
+    };
+    const undone = await s.command(undoCommand);
+    const restoredRight = undone.current.items[0]!;
+    const latestRight = await s.command({
+      kind: "edit",
+      commandId: randomUUID(),
+      utteranceId: restoredRight.id,
+      expectedRevision: restoredRight.revision,
+      text: "Newer than undo",
+      startSeconds: restoredRight.startSeconds,
+      endSeconds: restoredRight.endSeconds,
+    });
+    const undoReplay = await s.command(undoCommand);
+    assert.deepEqual(undoReplay.receipt, undone.receipt);
+    assert.deepEqual(undoReplay.current.items, latestRight.current.items);
+    assert.deepEqual(undoReplay.current.removed, undone.current.removed);
+    const splitReplay = await s.command(splitCommand);
+    assert.deepEqual(splitReplay.current.items, [
+      ...newerLeft.current.items,
+      ...latestRight.current.items,
+    ]);
+    assert.deepEqual(splitReplay.receipt, split.receipt);
+    const history = await s.history();
+    assert.equal(
+      history.items.find((item) => item.id === assigned.receipt.id)!.after[0]!.text,
+      original.text,
+    );
+    assert.equal(
+      history.items.find((item) => item.id === split.receipt.id)!.after[0]!.text,
+      left.text,
+    );
+  });
+
+  void it("keeps oversized replays successful without loading current large strings or changing receipts", async () => {
+    const s = await fixture(
+      Array.from({ length: 22 }, (_, i) => ({
+        start: i,
+        end: i + 1,
+        speaker: "S",
+        text: `Short speech ${i}`,
+      })),
+    );
+    const command = assign((await s.page()).items);
+    const assigned = await s.command(command);
+    const [storedBefore] =
+      await sql`select before, after, snapshot_bytes from transcript_corrections where workspace_id=${s.workspaceId} and id=${assigned.receipt.id}`;
+    for (const turn of assigned.current.items) {
+      await s.command({
+        kind: "edit",
+        commandId: randomUUID(),
+        utteranceId: turn.id,
+        expectedRevision: turn.revision,
+        text: "x".repeat(100_000),
+        startSeconds: turn.startSeconds,
+        endSeconds: turn.endSeconds,
+      });
+    }
+    queryCount = 0;
+    const replay = correctionResultSchema.parse(
+      JSON.parse(JSON.stringify(await s.command(command))),
+    );
+    assert.deepEqual(replay, {
+      receipt: assigned.receipt,
+      current: { items: [], removed: [], complete: false },
+    });
+    assert.ok(queryCount <= 7, `oversized replay made ${queryCount} queries`);
+    const [storedAfter] =
+      await sql`select before, after, snapshot_bytes from transcript_corrections where workspace_id=${s.workspaceId} and id=${assigned.receipt.id}`;
+    assert.deepEqual(storedAfter, storedBefore);
+    assert.equal((await counts(s.workspaceId))?.batches, 23);
   });
 
   void it("rejects invalid selection bounds and foreign people without partial splits", async () => {
@@ -291,7 +466,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     const [note] =
       await sql`select revision, transcript from notes where workspace_id=${s.workspaceId} and id=${s.noteId}`;
     assert.deepEqual(note, { revision: 1, transcript: "Manual note text" });
-    assert.equal(saved.affectedCount, 1);
+    assert.equal(saved.receipt.affectedCount, 1);
     assert.deepEqual(await counts(s.workspaceId), { batches: 1, outbox: 1, samples: 0 });
   });
 
@@ -326,7 +501,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     assert.equal(command.kind, "assign");
     if (command.kind !== "assign") throw new Error();
     const results = await Promise.all(Array.from({ length: 5 }, () => s.command(command)));
-    assert.ok(results.every((r) => r.id === results[0]!.id));
+    assert.ok(results.every((r) => r.receipt.id === results[0]!.receipt.id));
     assert.deepEqual(
       await s.command({ ...command, targets: [...command.targets].reverse() }),
       results[0],
@@ -492,9 +667,9 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     const undo = await s.command({
       kind: "undo",
       commandId: randomUUID(),
-      correctionId: edited.id,
+      correctionId: edited.receipt.id,
     });
-    assert.equal(undo.undoOf, edited.id);
+    assert.equal(undo.receipt.undoOf, edited.receipt.id);
     const restored = (await s.page()).items[0]!;
     assert.equal(restored.text, initial.text);
     assert.equal(restored.revision, 2);
@@ -502,7 +677,10 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     assert.equal(restored.startSeconds, initial.startSeconds);
     const history = correctionHistoryPageSchema.parse(await s.history());
     assert.equal(history.items.length, 2);
-    assert.equal(history.items.find((h) => h.id === edited.id)!.after[0]!.text, "Corrected words");
+    assert.equal(
+      history.items.find((h) => h.id === edited.receipt.id)!.after[0]!.text,
+      "Corrected words",
+    );
   });
 
   void it("text-only edits keep frozen attribution targets valid", async () => {
@@ -553,9 +731,9 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       assert.equal(child.attributionRevision, 1);
     }
     const assigned = await s.command(assign([current[1]!], s.person.id));
-    await s.command({ kind: "undo", commandId: randomUUID(), correctionId: assigned.id });
+    await s.command({ kind: "undo", commandId: randomUUID(), correctionId: assigned.receipt.id });
     await assert.rejects(
-      s.command({ kind: "undo", commandId: randomUUID(), correctionId: split.id }),
+      s.command({ kind: "undo", commandId: randomUUID(), correctionId: split.receipt.id }),
       (error: unknown) =>
         error instanceof WorkspaceError &&
         error.code === "conflict" &&
@@ -573,7 +751,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       code("conflict"),
     );
     const history = await s.history();
-    const event = history.items.find((h) => h.id === split.id)!;
+    const event = history.items.find((h) => h.id === split.receipt.id)!;
     assert.equal(event.before.length, 1);
     assert.equal(event.after.length, 2);
   });
@@ -593,13 +771,17 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       leftId,
       rightId,
     });
-    const undo = await s.command({ kind: "undo", commandId: randomUUID(), correctionId: split.id });
+    const undo = await s.command({
+      kind: "undo",
+      commandId: randomUUID(),
+      correctionId: split.receipt.id,
+    });
     assert.equal((await s.page()).items.length, 3);
     const [retired] =
       await sql`select active, revision from transcript_segments where workspace_id=${s.workspaceId} and id=${leftId}`;
     assert.deepEqual(retired, { active: false, revision: 2 });
     // Compensating an undo is safe if no target has changed since it.
-    await s.command({ kind: "undo", commandId: randomUUID(), correctionId: undo.id });
+    await s.command({ kind: "undo", commandId: randomUUID(), correctionId: undo.receipt.id });
     assert.equal((await s.page()).items[0]!.id, leftId);
     const child = (await s.page()).items[0]!;
     const childLeft = randomUUID();
@@ -633,7 +815,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       leftId: randomUUID(),
       rightId: randomUUID(),
     });
-    await fresh.command({ kind: "undo", commandId: randomUUID(), correctionId: first.id });
+    await fresh.command({ kind: "undo", commandId: randomUUID(), correctionId: first.receipt.id });
     await fresh.command({
       kind: "split",
       commandId: randomUUID(),
@@ -651,28 +833,32 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     const s = await fixture();
     const initial = (await s.page()).items;
     const first = await s.command(assign([initial[0]!], s.person.id));
-    await sql`update transcript_sample_candidates set state='confirmed' where workspace_id=${s.workspaceId} and correction_id=${first.id}`;
+    await sql`update transcript_sample_candidates set state='confirmed' where workspace_id=${s.workspaceId} and correction_id=${first.receipt.id}`;
     await s.command(assign([(await s.page()).items[1]!], s.person.id));
-    const undo = await s.command({ kind: "undo", commandId: randomUUID(), correctionId: first.id });
-    assert.equal(undo.undoOf, first.id);
+    const undo = await s.command({
+      kind: "undo",
+      commandId: randomUUID(),
+      correctionId: first.receipt.id,
+    });
+    assert.equal(undo.receipt.undoOf, first.receipt.id);
     const current = (await s.page()).items;
     assert.equal(current[0]!.assignment.kind, "unassigned");
     assert.equal(current[0]!.sampleSuitability, "invalidated");
     assert.equal(current[1]!.assignment.kind, "person");
     const [candidate] =
-      await sql`select state, invalidated_at, start_seconds, end_seconds from transcript_sample_candidates where workspace_id=${s.workspaceId} and correction_id=${first.id}`;
+      await sql`select state, invalidated_at, start_seconds, end_seconds from transcript_sample_candidates where workspace_id=${s.workspaceId} and correction_id=${first.receipt.id}`;
     assert.equal(candidate?.state, "invalidated");
     assert.ok(candidate?.invalidated_at);
     assert.equal(candidate?.start_seconds, 0);
     assert.equal(candidate?.end_seconds, 4);
     await assert.rejects(
-      s.command({ kind: "undo", commandId: randomUUID(), correctionId: first.id }),
+      s.command({ kind: "undo", commandId: randomUUID(), correctionId: first.receipt.id }),
       code("conflict"),
     );
     const next = await s.command(assign([current[0]!], s.person.id));
     await s.command(assign([(await s.page()).items[0]!]));
     await assert.rejects(
-      s.command({ kind: "undo", commandId: randomUUID(), correctionId: next.id }),
+      s.command({ kind: "undo", commandId: randomUUID(), correctionId: next.receipt.id }),
       code("conflict"),
     );
     assert.equal((await repo.appearances(s.principal, s.workspaceId, s.person.id)).items.length, 1);
@@ -688,7 +874,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       endSeconds: 4,
     });
     await assert.rejects(
-      s.command({ kind: "undo", commandId: randomUUID(), correctionId: latest.id }),
+      s.command({ kind: "undo", commandId: randomUUID(), correctionId: latest.receipt.id }),
       code("conflict"),
     );
     assert.equal((await s.page()).items[0]!.text, "Newer text must survive");
@@ -775,7 +961,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     await assert.rejects(s.page(), code("not_found"));
     await assert.rejects(s.history(), code("not_found"));
     await assert.rejects(
-      s.command({ kind: "undo", commandId: randomUUID(), correctionId: saved.id }),
+      s.command({ kind: "undo", commandId: randomUUID(), correctionId: saved.receipt.id }),
       code("not_found"),
     );
     await sql`update recordings set deleted_at=null where workspace_id=${s.workspaceId} and id=${s.recordingId}`;
@@ -861,8 +1047,10 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       assignment: { kind: "person" as const, personId: s.person.id },
     };
     const saved = await s.command(command);
-    assert.equal(saved.affectedCount, 500);
-    assert.ok(queryCount <= 17, `500-target command made ${queryCount} queries`);
+    assert.equal(saved.receipt.affectedCount, 500);
+    assert.equal(saved.current.complete, true);
+    assert.equal(saved.current.items.length, 500);
+    assert.ok(queryCount <= 19, `500-target command made ${queryCount} queries`);
     assert.deepEqual(await counts(s.workspaceId), { batches: 1, outbox: 1, samples: 500 });
     const remaining = await repo.targets(s.principal, s.workspaceId, s.noteId, s.runId, {
       speakerLabel: "S",

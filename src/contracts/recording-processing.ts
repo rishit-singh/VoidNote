@@ -4,6 +4,7 @@ import { idSchema } from "./workspace";
 export const MAX_RECORDING_BYTES = 1024 * 1024 * 1024;
 export const RECORDING_UPLOAD_PART_BYTES = 8 * 1024 * 1024;
 export const RECORDING_SIZE_LABEL = "1 GiB";
+
 export const uploadPartSchema = z.object({
   index: z.number().int().nonnegative().max(127),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),

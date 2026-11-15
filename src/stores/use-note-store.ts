@@ -2,16 +2,7 @@
 
 import { create } from "zustand";
 
-import {
-  saveNoteSchema,
-  savePersonSchema,
-  type DeleteCommand,
-  type NoteRecord,
-  type PersonRecord,
-  type SaveNote,
-  type SavePerson,
-  type Session,
-} from "@/contracts/workspace";
+import type { NoteRecord, PersonRecord, Session } from "@/contracts/workspace";
 import {
   validateRecoveryEntries,
   workspaceRecovery,
@@ -20,27 +11,15 @@ import {
 } from "./workspace-recovery";
 import { createNoteModel, type NoteModel } from "@/lib/types";
 import { ApiError, workspaceApi } from "@/lib/workspace-api";
+import { reconcileNoteSnapshot } from "@/queries/notes";
+import { reconcilePersonSnapshot } from "@/queries/people";
+import { createNoteDraftActions, prepareNoteCommand, type EditState } from "./notes";
+import { createPersonDraftActions, preparePersonCommand, type PersonDraft } from "./people";
+
+export type { EditState } from "./notes";
+export type { PersonDraft } from "./people";
 
 type Entity = "note" | "person";
-type Pending =
-  | { kind: "note"; command: SaveNote; generation: number }
-  | { kind: "person"; command: SavePerson; generation: number }
-  | { kind: "delete"; command: DeleteCommand; generation: number };
-
-export interface EditState {
-  baseRevision: number;
-  generation: number;
-  dirty: boolean;
-  saving: boolean;
-  pending: Pending | null;
-  error: string | null;
-  conflict: number | null;
-}
-
-export type PersonDraft = Pick<
-  PersonRecord,
-  "id" | "workspaceId" | "displayName" | "description"
-> & { scopeEpoch: number };
 
 interface NoteStoreState {
   session: Session | null;
@@ -111,13 +90,6 @@ const cleanEdit = (baseRevision = 0): EditState => ({
 });
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "The request failed. Please retry.";
-const asModel = (record: NoteRecord, local?: NoteModel): NoteModel =>
-  createNoteModel({
-    ...record,
-    audio: local?.audio ?? null,
-    url: local?.url ?? null,
-    recordingSessionId: local?.recordingSessionId ?? null,
-  });
 const replace = <T extends { id: string }>(items: T[], item: T) =>
   items.some((entry) => entry.id === item.id)
     ? items.map((entry) => (entry.id === item.id ? item : entry))
@@ -192,52 +164,14 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
       if (note.url?.startsWith("blob:")) URL.revokeObjectURL(note.url);
   };
 
-  const acceptNote = (record: NoteRecord) =>
-    set((state) => {
-      if (record.workspaceId !== state.session?.workspace.id) return {};
-      if (state.unavailable[editKey("note", record.id)] && !record.deletedAt) return {};
-      if (state.noteRecords[record.id]?.deletedAt && !record.deletedAt) return {};
-      if ((state.noteRecords[record.id]?.revision ?? 0) > record.revision) return {};
-      const key = editKey("note", record.id);
-      const edit = state.edits[key];
-      const keepDraft =
-        edit && (edit.dirty || edit.pending || edit.saving || edit.conflict !== null);
-      return {
-        noteRecords: { ...state.noteRecords, [record.id]: record },
-        notes: keepDraft
-          ? state.notes
-          : record.deletedAt
-            ? state.notes.filter((note) => note.id !== record.id)
-            : replace(state.notes, {
-                ...asModel(
-                  record,
-                  state.notes.find((note) => note.id === record.id),
-                ),
-                scopeEpoch: state.epoch,
-              }),
-        edits: keepDraft ? state.edits : { ...state.edits, [key]: cleanEdit(record.revision) },
-      };
-    });
-  const acceptPerson = (record: PersonRecord) =>
-    set((state) => {
-      if (record.workspaceId !== state.session?.workspace.id) return {};
-      if (state.unavailable[editKey("person", record.id)] && !record.deletedAt) return {};
-      if (state.personRecords[record.id]?.deletedAt && !record.deletedAt) return {};
-      if ((state.personRecords[record.id]?.revision ?? 0) > record.revision) return {};
-      const key = editKey("person", record.id);
-      const edit = state.edits[key];
-      const keepDraft =
-        edit && (edit.dirty || edit.pending || edit.saving || edit.conflict !== null);
-      return {
-        personRecords: { ...state.personRecords, [record.id]: record },
-        people: keepDraft
-          ? state.people
-          : record.deletedAt
-            ? state.people.filter((person) => person.id !== record.id)
-            : replace(state.people, { ...record, scopeEpoch: state.epoch }),
-        edits: keepDraft ? state.edits : { ...state.edits, [key]: cleanEdit(record.revision) },
-      };
-    });
+  const { acceptNote, removeNoteDraft, createNote, selectNote, upsertNote } =
+    createNoteDraftActions({ get, set, isReady: () => get().status === "ready", cleanEdit });
+  const { acceptPerson, createPerson, selectPerson, updatePerson } = createPersonDraftActions({
+    get,
+    set,
+    isReady: () => get().status === "ready",
+    cleanEdit,
+  });
 
   const reconcileUnavailable: NoteStoreState["reconcileUnavailable"] = (
     entity,
@@ -287,21 +221,11 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
     if (record.deletedAt) reconcileUnavailable(entity, record.id, "missing", epoch, updatedAt);
   };
 
-  const removeDraft = (entity: Entity, id: string) =>
+  const removeDraft = (entity: Entity, id: string) => {
+    if (entity === "note") return removeNoteDraft(id);
     set((state) => {
       const edits = { ...state.edits };
       delete edits[editKey(entity, id)];
-      if (entity === "note") {
-        const removed = state.notes.find((note) => note.id === id);
-        if (removed?.url?.startsWith("blob:")) URL.revokeObjectURL(removed.url);
-        const notes = state.notes.filter((note) => note.id !== id);
-        return {
-          edits,
-          notes,
-          unavailable: { ...state.unavailable, [editKey(entity, id)]: "missing" as const },
-          currentNoteId: state.currentNoteId === id ? (notes[0]?.id ?? null) : state.currentNoteId,
-        };
-      }
       const people = state.people.filter((person) => person.id !== id);
       return {
         edits,
@@ -311,6 +235,7 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
           state.currentPersonId === id ? (people[0]?.id ?? null) : state.currentPersonId,
       };
     });
+  };
 
   const mutate = async (entity: Entity, id: string, deleting = false) => {
     const state = get();
@@ -336,28 +261,11 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
         else if (entity === "note") {
           const note = state.notes.find((entry) => entry.id === id);
           if (!note) return;
-          pending = {
-            kind: "note",
-            generation: edit.generation,
-            command: saveNoteSchema.parse({
-              ...command,
-              content: {
-                title: note.title,
-                transcript: note.transcript,
-              },
-            }),
-          };
+          pending = prepareNoteCommand(note, command, edit.generation);
         } else {
           const person = state.people.find((entry) => entry.id === id);
           if (!person) return;
-          pending = {
-            kind: "person",
-            generation: edit.generation,
-            command: savePersonSchema.parse({
-              ...command,
-              content: { displayName: person.displayName, description: person.description },
-            }),
-          };
+          pending = preparePersonCommand(person, command, edit.generation);
         }
       } catch (error) {
         updateEdit(key, { error: message(error) });
@@ -376,9 +284,9 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
     try {
       const record =
         pending.kind === "note"
-          ? await workspaceApi.saveNote(workspaceId, pending.command)
+          ? await workspaceApi.saveNote(workspaceId, pending.command, { replaying })
           : pending.kind === "person"
-            ? await workspaceApi.savePerson(workspaceId, pending.command)
+            ? await workspaceApi.savePerson(workspaceId, pending.command, { replaying })
             : entity === "note"
               ? await workspaceApi.deleteNote(workspaceId, pending.command)
               : await workspaceApi.deletePerson(workspaceId, pending.command);
@@ -395,6 +303,12 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
         if (!scoped(epoch)) return;
         if (latest.workspaceId !== workspaceId || latest.id !== id)
           throw new Error("Unexpected current record; retry the original command.");
+        if (entity === "note") {
+          await reconcileNoteSnapshot(latest as NoteRecord);
+        } else {
+          await reconcilePersonSnapshot(latest as PersonRecord);
+        }
+        if (!scoped(epoch)) return;
         if (latest.deletedAt) {
           const current = get().edits[key];
           const draft =
@@ -802,99 +716,14 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
       if (error instanceof ApiError && error.status === 401) get().clearSession();
       else set({ error: message(error) });
     },
-    createNote: () => {
-      const session = get().session;
-      if (!session || get().status !== "ready")
-        throw new Error("Sign in and wait for recovery before creating a note.");
-      const note = createNoteModel({
-        id: crypto.randomUUID(),
-        workspaceId: session.workspace.id,
-        revision: 0,
-        scopeEpoch: get().epoch,
-      });
-      set((state) => ({
-        notes: [...state.notes, note],
-        currentNoteId: note.id,
-        edits: { ...state.edits, [editKey("note", note.id)]: cleanEdit() },
-      }));
-      return note;
-    },
-    selectNote: (id) => {
-      if (get().notes.some((note) => note.id === id)) set({ currentNoteId: id });
-    },
-    upsertNote: (note) => {
-      const state = get();
-      const existing = state.notes.find((entry) => entry.id === note.id);
-      if (
-        !state.session ||
-        !existing ||
-        note.scopeEpoch !== state.epoch ||
-        (note.workspaceId && note.workspaceId !== state.session.workspace.id)
-      )
-        return;
-      const key = editKey("note", note.id);
-      const edit = state.edits[key];
-      if (!edit) return;
-      const contentChanged =
-        note.title !== existing.title || note.transcript !== existing.transcript;
-      // Recorder callbacks may arrive while a save is pending. Keep them and use
-      // generation tracking so the response cannot replace the newer draft.
-      set({
-        notes: replace(state.notes, {
-          ...note,
-          workspaceId: state.session.workspace.id,
-          revision: edit.baseRevision,
-        }),
-        edits: {
-          ...state.edits,
-          [key]: {
-            ...edit,
-            dirty: edit.dirty || contentChanged,
-            generation: edit.generation + (contentChanged ? 1 : 0),
-          },
-        },
-      });
-    },
+    createNote,
+    selectNote,
+    upsertNote,
     saveNote: (id) => mutate("note", id),
     deleteNote: (id) => mutate("note", id, true),
-    createPerson: () => {
-      const session = get().session;
-      if (!session || get().status !== "ready")
-        throw new Error("Sign in and wait for recovery before creating a person.");
-      const person = {
-        id: crypto.randomUUID(),
-        workspaceId: session.workspace.id,
-        displayName: "",
-        description: "",
-        scopeEpoch: get().epoch,
-      };
-      set((state) => ({
-        people: [...state.people, person],
-        currentPersonId: person.id,
-        edits: { ...state.edits, [editKey("person", person.id)]: cleanEdit() },
-      }));
-      return person;
-    },
-    selectPerson: (id) => {
-      if (get().people.some((person) => person.id === id)) set({ currentPersonId: id });
-    },
-    updatePerson: (person) => {
-      const state = get();
-      if (
-        !state.session ||
-        person.scopeEpoch !== state.epoch ||
-        person.workspaceId !== state.session.workspace.id ||
-        !state.people.some((entry) => entry.id === person.id)
-      )
-        return;
-      const key = editKey("person", person.id);
-      const edit = state.edits[key];
-      if (!edit) return;
-      set({
-        people: replace(state.people, person),
-        edits: { ...state.edits, [key]: { ...edit, dirty: true, generation: edit.generation + 1 } },
-      });
-    },
+    createPerson,
+    selectPerson,
+    updatePerson,
     savePerson: (id) => mutate("person", id),
     deletePerson: (id) => mutate("person", id, true),
     retry: (entity, id) => mutate(entity, id),

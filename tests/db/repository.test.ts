@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { after, describe, it } from "node:test";
+import { noteListSchema, noteSchema } from "../../src/contracts/notes";
+import { personListSchema, toPersonListItem } from "../../src/contracts/people";
 import {
   WorkspaceError,
   historySchema,
-  noteSchema,
   personSchema,
   type ListQuery,
 } from "../../src/contracts/workspace";
@@ -128,6 +130,42 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     assert.deepEqual(await repo.saveNote(principal, workspaceId, edit), edited);
     assert.deepEqual(await counts(workspaceId), baseline);
     assert.equal((await repo.getNote(principal, workspaceId, original.id)).revision, 3);
+  });
+
+  void it("omits large transcripts from lists while retaining detail, save and replay content", async () => {
+    const { principal, workspaceId } = await workspace();
+    const transcript = "speech ".repeat(70_000);
+    const create = note({ content: { title: "Long recording", transcript } });
+    const original = await repo.saveNote(principal, workspaceId, create);
+    assert.equal(original.transcript, transcript);
+
+    const edit = note({
+      id: original.id,
+      expectedRevision: original.revision,
+      content: { title: original.title, transcript: `${transcript}Updated ending.` },
+    });
+    const updated = await repo.saveNote(principal, workspaceId, edit);
+    const result = await repo.listNotes(principal, workspaceId, { q: "Long", limit: 1 });
+    assert.deepEqual(result, {
+      items: [
+        {
+          id: updated.id,
+          workspaceId: updated.workspaceId,
+          title: updated.title,
+          revision: updated.revision,
+          createdAt: updated.createdAt,
+          updatedAt: updated.updatedAt,
+          deletedAt: updated.deletedAt,
+        },
+      ],
+      nextCursor: null,
+    });
+    assert.deepEqual(noteListSchema.parse(result), result);
+    assert.equal(Object.hasOwn(result.items[0]!, "transcript"), false);
+    assert.equal(updated.transcript, edit.content.transcript);
+    assert.deepEqual(await repo.getNote(principal, workspaceId, updated.id), updated);
+    assert.deepEqual(await repo.saveNote(principal, workspaceId, create), original);
+    assert.deepEqual(await repo.saveNote(principal, workspaceId, edit), updated);
   });
 
   void it("rejects reuse of a command ID with changed content, target, revision, or operation", async () => {
@@ -340,6 +378,35 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     });
   });
 
+  void it("bounds SQL people previews while preserving full detail, saves and historical receipts", async () => {
+    const { principal, workspaceId } = await workspace();
+    const description = `${"a".repeat(159)}😀${"biography ".repeat(400)}`;
+    const create = person({ content: { displayName: "Ada", description } });
+    const original = await repo.savePerson(principal, workspaceId, create);
+    assert.equal(original.description, description);
+    const edit = person({
+      id: original.id,
+      expectedRevision: original.revision,
+      content: { displayName: "Ada", description: `${"😀".repeat(160)}Updated biography` },
+    });
+    const initialList = await repo.listPeople(principal, workspaceId, peoplePage);
+    assert.deepEqual(initialList.items, [toPersonListItem(original)]);
+    assert.equal(initialList.items[0]?.descriptionPreview, `${"a".repeat(159)}😀`);
+
+    const updated = await repo.savePerson(principal, workspaceId, edit);
+    const result = await repo.listPeople(principal, workspaceId, peoplePage);
+    assert.deepEqual(result, { items: [toPersonListItem(updated)], nextCursor: null });
+    assert.deepEqual(personListSchema.parse(result), result);
+    assert.equal(Object.hasOwn(result.items[0]!, "description"), false);
+    assert.equal(result.items[0]?.descriptionPreview, "😀".repeat(160));
+    assert.equal(updated.description, edit.content.description);
+    assert.deepEqual(await repo.getPerson(principal, workspaceId, updated.id), updated);
+    const baseline = await counts(workspaceId);
+    assert.deepEqual(await repo.savePerson(principal, workspaceId, create), original);
+    assert.deepEqual(await repo.savePerson(principal, workspaceId, edit), updated);
+    assert.deepEqual(await counts(workspaceId), baseline);
+  });
+
   void it("applies optimistic revisions, retries and tombstones to people", async () => {
     const { principal, workspaceId } = await workspace();
     const command = person();
@@ -402,7 +469,10 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
       2,
     );
     assert.deepEqual(notes.map((value) => value.id).sort(), noteIds.sort());
-    assert.deepEqual(people.map((value) => value.id).sort(), personIds.sort());
+    assert.deepEqual(
+      people.map((value) => value.id),
+      personIds.sort(),
+    );
     assert.equal((await repo.listNotes(principal, workspaceId, { limit: 1 })).items.length, 1);
   });
 
@@ -457,6 +527,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
       "A_percent",
       "ABpercent",
       "A%literal",
+      "A\\literal",
     ]) {
       await repo.savePerson(
         principal,
@@ -471,6 +542,68 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     assert.deepEqual(await names("ada"), ["ADAM", "Ada Lovelace"]);
     assert.deepEqual(await names("A_"), ["A_percent"]);
     assert.deepEqual(await names("A%"), ["A%literal"]);
+    assert.deepEqual(await names("A\\"), ["A\\literal"]);
+  });
+
+  void it("binds people pagination to the exact search and rejects unbound legacy cursors", async () => {
+    const { principal, workspaceId } = await workspace();
+    const ids: string[] = [];
+    for (const displayName of ["Ada", "ADAM", "Adaline"]) {
+      const saved = await repo.savePerson(
+        principal,
+        workspaceId,
+        person({
+          content: { displayName, description: "Biography" },
+        }),
+      );
+      ids.push(saved.id);
+    }
+    await repo.savePerson(
+      principal,
+      workspaceId,
+      person({
+        content: { displayName: "Not Ada", description: "" },
+      }),
+    );
+    const matching = await collect(
+      (query) => repo.listPeople(principal, workspaceId, { ...query, q: "ada" }),
+      1,
+    );
+    assert.deepEqual(
+      matching.map((item) => item.id),
+      ids.sort(),
+    );
+    const first = await repo.listPeople(principal, workspaceId, { q: "ada", limit: 1 });
+    assert.ok(first.nextCursor);
+    for (const q of ["", "other", "ADA", "ada "]) {
+      await assert.rejects(
+        repo.listPeople(principal, workspaceId, { q, limit: 1, cursor: first.nextCursor }),
+        code("invalid_cursor"),
+      );
+    }
+    const other = await workspace();
+    await assert.rejects(
+      repo.listPeople(other.principal, other.workspaceId, {
+        q: "ada",
+        limit: 1,
+        cursor: first.nextCursor,
+      }),
+      code("invalid_cursor"),
+    );
+    const legacyCursor = Buffer.from(
+      JSON.stringify({
+        v: 1,
+        kind: "people",
+        workspaceId,
+        id: first.items[0]!.id,
+      }),
+    ).toString("base64url");
+    for (const q of ["", "ada"]) {
+      await assert.rejects(
+        repo.listPeople(principal, workspaceId, { q, limit: 1, cursor: legacyCursor }),
+        code("invalid_cursor"),
+      );
+    }
   });
 
   void it("searches literal title prefixes with bounded query-bound pages and excludes tombstones", async () => {

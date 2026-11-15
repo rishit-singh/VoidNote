@@ -1,7 +1,8 @@
 # Scoped query and recovery foundation
 
-This is a local, uncommitted refactor following the deployed recording-first UI.
-It has not been deployed. Production still serves
+This refactor follows the recording-first UI and was pushed in commit `730d97e`
+on `feat/next-bun-foundation`. It was deployed to production on 2026-11-14 as
+`e56ca62f-77ac-4bd6-97df-7c60b25af362`, replacing
 `46c2f778-a3e8-4517-9682-8be950aa5117`.
 
 ## State ownership
@@ -46,6 +47,12 @@ their HTTP boundaries. Resumable upload ownership and durable IndexedDB chunks
 remain in the recording lifecycle.
 
 ## Verification and remaining work
+
+Production delivery passed a fresh Node 24 Worker build and deployment dry run.
+The deployed homepage, JavaScript asset and health endpoint return HTTP 200;
+the unauthenticated RPC session endpoint returns HTTP 401. Markdown export remains
+enabled at build time. These smoke checks do not establish authenticated hosted
+recording/correction acceptance.
 
 Initial integration checks passed all seven TypeScript targets, zero-warning
 ESLint, 32 focused recovery/query tests and 11 auth/RPC tests. The Worker built

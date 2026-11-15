@@ -18,7 +18,7 @@ const handler = {
     };
     try {
       if (request.method === "PUT") {
-        const body = request.body!.pipeThrough(new TransformStream());
+        const body = request.body!.pipeThrough(new TransformStream<Uint8Array, Uint8Array>());
         try {
           const result = await uploadRecordingPart(
             env.BUCKET,

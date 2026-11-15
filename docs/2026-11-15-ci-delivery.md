@@ -53,3 +53,17 @@ are retained; local environment files are not copied into CI.
 
 The PR and subsequent main-push Actions runs provide hosted integration and delivery
 evidence. Local simulations alone do not establish a successful production release.
+
+## Hosted PR verification
+
+PR #5's initial Linux run exposed an early-response `EPIPE` in the large-upload
+Worker fixture. Unused request bodies are now drained with bounded streaming; an
+explicit byte-stream type preserves typed lint. Run `43690805618` passed formatting,
+lint, types, Worker tests, PostgreSQL tests, auth tests, production build and packaging.
+
+That run passed 56 browser cases with one optional demo skipped, but the large-upload
+browser case matched a temporary ready-to-process alert before any part was sent.
+Its trace confirms that the assertion raced upload startup. The test now waits for
+the first stored part and the injected network-error message before reloading;
+all checksum, part-count and no-reupload assertions remain. Focused lint, browser-test
+types and formatting pass locally; the next hosted run verifies the browser fix.

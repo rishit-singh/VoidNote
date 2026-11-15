@@ -99,10 +99,12 @@ test("320 MiB audio resumes acknowledged parts after a lost response and reload"
   });
   await page.goto(`/notes/${note.id}`);
   await page.getByLabel("Upload audio", { exact: true }).setInputFiles(file);
+  // Finalization briefly shows a ready-to-process alert before upload starts.
+  // Wait for the stored part and the injected transport failure before reloading.
+  await expect.poll(() => parts.size, { timeout: 30_000 }).toBe(1);
   await expect(
     page.getByRole("region", { name: "Transcript", exact: true }).getByRole("alert"),
-  ).toBeVisible({ timeout: 30_000 });
-  expect(parts.size).toBe(1);
+  ).toContainText("Failed to fetch", { timeout: 30_000 });
   await page.reload();
   await expect.poll(() => submissions, { timeout: 180_000 }).toBe(1);
   expect(attempts.size).toBe(40);

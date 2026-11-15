@@ -112,7 +112,8 @@ jobs:
           : "${CLOUDFLARE_ACCOUNT_ID:?Set the CLOUDFLARE_ACCOUNT_ID Actions secret}"
           mkdir -p "$RUNNER_TEMP/production-deploy"
           # Reuse the checked .open-next output and locked Wrangler; do not rebuild Next.
-          bunx --no-install wrangler deploy --env production \
+          # Explicit config bypasses Wrangler's automatic OpenNext CLI delegation.
+          bunx --no-install wrangler deploy --config wrangler.jsonc --env production \
             --tag "$GITHUB_SHA" \
             --message "CI run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
           version_id="$(jq -er -s '

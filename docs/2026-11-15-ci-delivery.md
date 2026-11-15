@@ -66,4 +66,15 @@ browser case matched a temporary ready-to-process alert before any part was sent
 Its trace confirms that the assertion raced upload startup. The test now waits for
 the first stored part and the injected network-error message before reloading;
 all checksum, part-count and no-reupload assertions remain. Focused lint, browser-test
-types and formatting pass locally; the next hosted run verifies the browser fix.
+types and formatting passed locally. PR run `43703732190` passed the full sequence,
+and PR #5 merged as `143abb04ab037444fe5f37e186f10f88401b9fba`.
+
+## Initial main release attempt
+
+Main run `43704065288` passed all checks, then failed before upload. Wrangler 4.162.0
+automatically delegated deployment to OpenNext, whose CLI handoff split the quoted
+release message into separate arguments. The deployment command now explicitly
+selects `wrangler.jsonc`, bypassing that framework delegation and deploying the
+checked Worker entry point directly. The locked Wrangler implementation confirms
+that explicit config suppresses delegation. The failed run retained delivery evidence;
+production deployment and credential-permission verification remain pending.

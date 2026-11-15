@@ -1,0 +1,76 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "voidnote-local",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "upload_source_maps": true,
+  "secrets": {
+    "required": [],
+  },
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS",
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+  "r2_buckets": [{ "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-local" }],
+  "workflows": [
+    {
+      "binding": "PROCESS_RECORDING",
+      "name": "voidnote-processing-local",
+      "class_name": "RecordingProcessingWorkflow",
+    },
+  ],
+  "env": {
+    // Keep assets explicit so environment-specific type generation includes ASSETS.
+    "staging": {
+      "name": "voidnote-staging",
+      "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+      "secrets": { "required": [] },
+      "r2_buckets": [
+        { "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-staging" },
+      ],
+      "workflows": [
+        {
+          "binding": "PROCESS_RECORDING",
+          "name": "voidnote-processing-staging",
+          "class_name": "RecordingProcessingWorkflow",
+        },
+      ],
+    },
+    "production": {
+      "name": "voidnote-production",
+      "workers_dev": true,
+      "r2_buckets": [
+        { "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-production" },
+      ],
+      "workflows": [
+        {
+          "binding": "PROCESS_RECORDING",
+          "name": "voidnote-processing-production",
+          "class_name": "RecordingProcessingWorkflow",
+        },
+      ],
+      "triggers": { "crons": ["* * * * *"] },
+      "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "77f615af9cf34b0e843af2368e133933",
+          // Local preview only; override through CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE.
+          "localConnectionString": "postgresql://voidnote_test:voidnote_test@127.0.0.1:55432/voidnote_test",
+        },
+      ],
+      "vars": {
+        "APP_URL": "https://voidnote-production.rsrishitsingh.workers.dev",
+        "SUPABASE_URL": "https://rbacdtsvrogopijybsep.supabase.co",
+      },
+      "secrets": {
+        "required": ["SUPABASE_PUBLISHABLE_KEY", "PYANNOTE_API_KEY", "RECORDING_CAPABILITY_SECRET"],
+      },
+    },
+  },
+}

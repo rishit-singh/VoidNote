@@ -1,0 +1,24 @@
+# Copy to .dev.vars for the local Workers preview. Runtime configuration comes
+# from Wrangler vars/secrets or this file, not from .env.local.
+# Production Hyperdrive points local preview at disposable Postgres on
+# 127.0.0.1:55432; start that test DB or set
+# CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE in your shell.
+NEXTJS_ENV=production
+
+# Local workerd preview. APP_URL must match the browser origin.
+APP_URL=http://localhost:8787
+SUPABASE_URL=https://rbacdtsvrogopijybsep.supabase.co
+SUPABASE_PUBLISHABLE_KEY=
+
+# Finalized processing: use a random capability secret of at least 32 characters.
+# Provider callbacks/media need a reachable HTTPS APP_URL; local preview alone
+# cannot receive provider requests. DATABASE_URL is only used for migrations.
+PYANNOTE_API_KEY=
+RECORDING_CAPABILITY_SECRET=
+# Reserved for future Summary/Ask.
+OPENAI_API_KEY=
+
+# Optional tracing: use a project write token and its region-specific base URL.
+LOGFIRE_TOKEN=
+LOGFIRE_BASE_URL=
+LOGFIRE_ENVIRONMENT=development

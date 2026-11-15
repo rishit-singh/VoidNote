@@ -1,33 +1,15 @@
-import { Route, Routes } from "react-router-dom";
-
-import HomeLandingPage from "./pages/Home/HomeLandingPage";
-import NoteViewHomePage from "./pages/Notes/NoteViewHomePage";
-import ProtectedRoute from "@/components/auth/ProtectedRoute";
-import RedirectRoute from "@/components/auth/RedirectRoute";
+import "./App.css";
+import WorkspaceShell from "./components/workspace/WorkspaceShell";
+import { HomeView } from "./components/workspace/HomeView";
+import { ThemeProvider } from "./components/theme-provider";
 
 function App() {
   return (
-    <Routes>
-      {/* Public Routes */}
-      <Route
-        path="/"
-        element={
-          <RedirectRoute>
-            <HomeLandingPage />
-          </RedirectRoute>
-        }
-      />
-
-      {/* Protected Routes */}
-      <Route
-        path="/notes"
-        element={
-          <ProtectedRoute>
-            <NoteViewHomePage />
-          </ProtectedRoute>
-        }
-      />
-    </Routes>
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+      <WorkspaceShell>
+        <HomeView />
+      </WorkspaceShell>
+    </ThemeProvider>
   );
 }
 

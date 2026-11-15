@@ -1,0 +1,9 @@
+project_id = "VoidNote"
+
+[auth]
+site_url = "https://voidnote-production.rsrishitsingh.workers.dev"
+additional_redirect_urls = [
+  "https://voidnote-production.rsrishitsingh.workers.dev/auth/callback",
+  "http://localhost:3000/auth/callback",
+  "http://localhost:8787/auth/callback",
+]

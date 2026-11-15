@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794628869205,
+      "tag": "0000_saved_notes_and_people",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794628911993,
+      "tag": "0001_backend_only_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794640849534,
+      "tag": "0002_notes_title_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794656138659,
+      "tag": "0003_recording_processing",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794662471837,
+      "tag": "0004_large_recording_uploads",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794668555905,
+      "tag": "0005_transcript_corrections",
+      "breakpoints": true
+    }
+  ]
+}

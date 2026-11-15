@@ -91,6 +91,12 @@ target as already implemented.
 
 ## Verification and delivery
 
+- Production delivery belongs to `.github/workflows/ci.yml`: checked pushes to
+  `main` deploy the tested build, record its commit/Cloudflare version and run a
+  health smoke test. PRs and manual workflow dispatch run checks only. Treat local
+  Wrangler deployment as an explicitly authorized recovery exception, not normal
+  delivery. Commit/push/merge authorization remains separate from implementation.
+
 - Use Node 24 and Bun; preserve `bun.lock`. Keep secrets out of commands/output.
 - Run checks appropriate to the change. For state work, prioritize request
   deduplication, hydration races, exact retries, pagination and account switching.

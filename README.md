@@ -111,6 +111,37 @@ It includes the responsive frontend, draft recovery, persistent playback and
 durable finalized transcription and speaker/text correction.
 The remaining product capabilities above are not release-complete.
 
+### Production delivery
+
+`.github/workflows/ci.yml` runs checks on pull requests and deploys successful
+pushes to `main`. Deployment uses the same checked OpenNext build, then probes
+`/api/health`. The Actions summary and `production-deploy-*` artifact record the
+commit, Cloudflare version and smoke-test outcome. Manual workflow dispatch runs
+checks only; rerunning a successful main-push run can retry delivery if that commit
+is still the current main head.
+
+Configure these **repository Actions secrets** before the first automatic release:
+
+- `CLOUDFLARE_ACCOUNT_ID`: the account hosting `voidnote-production`.
+- `CLOUDFLARE_API_TOKEN`: a scoped Workers deployment token for that account, with
+  access to this Worker's R2, Hyperdrive and Workflow bindings. See
+  [Cloudflare's GitHub Actions setup](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/).
+
+Application secrets remain configured on the Worker; CI does not copy local `.env`
+files or replace those secrets. Production runs are serialized, cannot be cancelled
+by a newer push, and skip a superseded main commit before deployment. A failed smoke
+test marks the run failed and retains deployment evidence; it does not automatically
+roll back an already deployed version. The health probe establishes HTTP availability,
+not authenticated database/provider acceptance. Database migrations remain a separate,
+explicitly coordinated release operation.
+
+Main uses GitHub's `queue: max` (up to 100 pending runs), so an older rerun cannot
+replace the newest queued release. Manual dispatch uses a separate concurrency lane;
+PR jobs still cancel superseded checks.
+
+Normal delivery is PR → checks → merge → CI deploy. Manual Wrangler deployment is
+reserved for explicitly authorized recovery.
+
 The [foundation setup](docs/2026-11-13-01-foundation.md) covers runtime settings
 and optional Logfire tracing. `bun run test:db` requires an isolated
 `TEST_DATABASE_URL`; CI supplies a PostgreSQL service.

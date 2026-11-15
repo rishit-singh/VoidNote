@@ -10,14 +10,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Queue main pushes/reruns without displacing the latest pending release.
+  # Dispatch checks have a separate lane; PR supersession is handled by the job.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.run_id || github.ref }}
+  queue: max
+  cancel-in-progress: false
 
 jobs:
   foundation:
     name: Checks, Postgres invariants and Cloudflare preview
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
+    concurrency:
+      group: checks-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     services:
       postgres:
         image: postgres:17-alpine
@@ -80,6 +86,86 @@ jobs:
 
       - name: Test the local Cloudflare production preview
         run: bun run test:e2e
+
+      - name: Select current main commit for production
+        id: release
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          main_sha="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
+          if [[ "$main_sha" == "$GITHUB_SHA" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Production deployment skipped: $GITHUB_SHA was superseded on main." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Deploy the tested Worker to production
+        id: deploy
+        if: ${{ steps.release.outputs.deploy == 'true' }}
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/production-deploy/wrangler.jsonl
+        run: |
+          : "${CLOUDFLARE_API_TOKEN:?Set the CLOUDFLARE_API_TOKEN Actions secret}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?Set the CLOUDFLARE_ACCOUNT_ID Actions secret}"
+          mkdir -p "$RUNNER_TEMP/production-deploy"
+          # Reuse the checked .open-next output and locked Wrangler; do not rebuild Next.
+          bunx --no-install wrangler deploy --env production \
+            --tag "$GITHUB_SHA" \
+            --message "CI run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
+          version_id="$(jq -er -s '
+            [.[] | select(.type == "deploy" and .worker_name == "voidnote-production"
+              and .wrangler_environment == "production")]
+            | last | .version_id | select(type == "string" and length > 0)
+          ' "$WRANGLER_OUTPUT_FILE_PATH")"
+          echo "version_id=$version_id" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test production health
+        id: smoke
+        if: ${{ steps.deploy.outcome == 'success' }}
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --retry 6 --retry-all-errors \
+            --retry-delay 5 --connect-timeout 10 --max-time 20 \
+            -H 'Cache-Control: no-cache' \
+            https://voidnote-production.rsrishitsingh.workers.dev/api/health \
+            -o "$RUNNER_TEMP/production-deploy/health.json"
+          jq -e '.status == "ok" and (.requestId | type == "string" and length > 0)' \
+            "$RUNNER_TEMP/production-deploy/health.json"
+
+      - name: Record production delivery
+        if: ${{ !cancelled() && steps.release.outputs.deploy == 'true' }}
+        shell: bash
+        env:
+          VERSION_ID: ${{ steps.deploy.outputs.version_id }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/production-deploy"
+          jq -n --arg commit "$GITHUB_SHA" --arg version "$VERSION_ID" \
+            --arg deployment "$DEPLOY_OUTCOME" --arg smoke "$SMOKE_OUTCOME" \
+            --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{commit: $commit, cloudflareVersion: $version, deployment: $deployment, smoke: $smoke, run: $run}' \
+            > "$RUNNER_TEMP/production-deploy/result.json"
+          {
+            echo '## Production delivery'
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Cloudflare version: \`${VERSION_ID:-unavailable}\`"
+            echo "- Deployment: $DEPLOY_OUTCOME"
+            echo "- Health smoke test: $SMOKE_OUTCOME"
+            echo '- URL: https://voidnote-production.rsrishitsingh.workers.dev'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload production delivery evidence
+        if: ${{ !cancelled() && steps.release.outputs.deploy == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-deploy-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/production-deploy/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload browser test diagnostics
         if: ${{ !cancelled() }}

@@ -18,14 +18,22 @@ const handler = {
     };
     try {
       if (request.method === "PUT") {
-        const result = await uploadRecordingPart(
-          env.BUCKET,
-          recording,
-          Number(url.searchParams.get("part")),
-          request.headers.get("x-content-sha256")!,
-          request.body!.pipeThrough(new TransformStream()),
-        );
-        return Response.json(result);
+        const body = request.body!.pipeThrough(new TransformStream());
+        try {
+          const result = await uploadRecordingPart(
+            env.BUCKET,
+            recording,
+            Number(url.searchParams.get("part")),
+            request.headers.get("x-content-sha256")!,
+            body,
+          );
+          return Response.json(result);
+        } finally {
+          // Replays and rejected indexes can return without reading the body.
+          // Drain the fixture's transport stream without buffering a whole part:
+          // otherwise Linux/Undici may fail with EPIPE before observing the response.
+          if (!body.locked) await body.pipeTo(new WritableStream()).catch(() => {});
+        }
       }
       if (request.method === "POST") {
         const object = await completeRecordingUpload(env.BUCKET, recording);

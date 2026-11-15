@@ -78,6 +78,7 @@ test("a profile appearance opens its recording and timestamp in the persistent p
       speakerLabel: "SPEAKER_00",
       text,
       sourceUtteranceId: id,
+      orderKey: "",
       parentId: null,
       revision: 1,
       attributionRevision: 1,

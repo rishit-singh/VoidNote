@@ -1,5 +1,7 @@
 "use client";
 import { useEffect } from "react";
+
+import { queryPolicy } from "@/config/query";
 import { useNoteStore } from "@/stores/use-note-store";
 
 /** Shell-owned timers keep saving the original note after navigation. */
@@ -26,7 +28,11 @@ export function useNoteAutosave() {
           timers.delete(id);
         }
       }
-      if (!state.session || state.status !== "ready") return;
+
+      if (!state.session || state.status !== "ready") {
+        return;
+      }
+
       for (const note of state.notes) {
         const edit = state.edits[`note:${note.id}`];
         if (
@@ -36,18 +42,23 @@ export function useNoteAutosave() {
           edit.error ||
           edit.conflict !== null ||
           timers.has(note.id)
-        )
+        ) {
           continue;
+        }
+
         const timer = setTimeout(() => {
           timers.delete(note.id);
-          if (useNoteStore.getState().epoch === state.epoch)
+          if (useNoteStore.getState().epoch === state.epoch) {
             void useNoteStore.getState().saveNote(note.id);
-        }, 600);
+          }
+        }, queryPolicy.titleAutosaveDelayMs);
         timers.set(note.id, { generation: edit.generation, epoch: state.epoch, timer });
       }
     };
+
     const unsubscribe = useNoteStore.subscribe(check);
     check();
+
     return () => {
       unsubscribe();
       timers.forEach(({ timer }) => clearTimeout(timer));

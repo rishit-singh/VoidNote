@@ -30,7 +30,7 @@ export function useNoteEditor(noteId: string) {
         ? "forbidden"
         : "missing"
       : undefined;
-  const unavailable = detailUnavailable ?? storedUnavailable;
+  const unavailable = detailUnavailable ?? (query.data?.deletedAt ? "missing" : storedUnavailable);
   const note =
     !unavailable && query.status === "success" && query.data && !edit?.dirty && !edit?.pending
       ? createNoteModel({ ...query.data, scopeEpoch: epoch })

@@ -11,6 +11,31 @@
 - Preserve existing user changes. Do not commit, push, deploy, or rewrite applied
   migrations without authorization for that action.
 
+## Modification and module conventions
+
+- Load `change-with-confidence` for substantive fixes, modifications and refactors.
+  Load `domain-first-stack` for cross-layer architecture or domain slices. Canonical
+  instructions live in `.opencode/skills/`; the plan-directory copies are handoff records.
+- Use domain → responsibility consistently across contracts, server operations,
+  persistence, queries, stores, UI, workflows and agents. Cohesive modules may be
+  single files; multi-file modules expose explicit `index.ts` exports. Consumers
+  use public entry points and internal files import siblings directly.
+- Keep public DTOs consumer-specific, server/provider models internal and framework
+  routes thin. Preserve stable IDs, source evidence and concurrency tokens.
+- Write readable logical stages, named units and multiline complex object/type
+  shapes. Enforce supported conventions with lint/format rather than relying on prose.
+- Give tunable policy one typed owner with validated defaults/bounds; use named
+  constants for domain/protocol invariants. Preserve settings pinned to durable work.
+- Show optimistic pending feedback separately from acknowledgement. Successful
+  mutations must not wait for background refetch; rollback preserves newer edits.
+- Review verified lessons at the end of a substantive slice and before major
+  refactors/runtime upgrades. Update the owning canonical skill only when evidence
+  warrants it; record material changes in its changelog. Product decisions and
+  deployment evidence belong in project instructions and implementation notes.
+- The corrective 02b plan precedes Summary/Ask implementation. Workers AI is the
+  chosen inference platform; runtime/context/memory/tool design still requires user
+  agreement before the separate agent-workflow worktree is bootstrapped.
+
 ## State architecture
 
 The target is tRPC + TanStack Query for application server state. Migration is

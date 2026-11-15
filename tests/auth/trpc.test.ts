@@ -4,19 +4,62 @@ import { before, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { compileFunction } from "node:vm";
 import { build } from "esbuild";
+import type { CorrectionResult } from "../../src/contracts/transcript-corrections.ts";
 import type { Principal } from "../../src/contracts/workspace.ts";
 
 type Backend = typeof import("../../src/server/trpc/context.ts") &
   typeof import("../../src/server/trpc/http.ts") &
   typeof import("../../src/server/trpc/router.ts") &
   typeof import("../../src/contracts/workspace.ts") &
-  Pick<typeof import("../../src/auth/server.ts"), "AuthError">;
+  Pick<typeof import("../../src/auth/server.ts"), "AuthError"> & {
+    correctionsPOST: typeof import("../../src/app/api/workspaces/[workspaceId]/notes/[noteId]/processing/[runId]/corrections/route.ts").POST;
+  };
 
 const origin = "https://voidnote.test";
 const user: Principal = { id: "d0512bb8-a3a6-4114-a12e-113c17035db6", email: null };
 const workspaceId = "c44a5492-f55a-44fc-925e-7c77e01bcb56";
 const noteId = "538f976c-394c-4706-a01e-2af014b7409a";
 const runId = "4ce501f0-7277-4788-bcff-57e7bcf5eb64";
+const correctionResult: CorrectionResult = {
+  receipt: {
+    id: "68db2ed6-b6b3-4e1a-a76d-a2a3f9cdc144",
+    commandId: "6500f063-9be1-4c8e-9ace-c51c8a27a674",
+    kind: "split",
+    affectedCount: 1,
+    createdAt: "2026-11-14T12:00:00.000Z",
+    undoOf: null,
+  },
+  current: {
+    items: [
+      {
+        id: "e620bb2c-5679-49fa-b2b8-345487462b5c",
+        runId,
+        recordingId: "7a020399-0666-4f7a-944c-05b8d3c14931",
+        sequence: 0,
+        orderKey: "01",
+        sourceUtteranceId: noteId,
+        parentId: noteId,
+        revision: 4,
+        attributionRevision: 2,
+        startSeconds: 1,
+        endSeconds: 2,
+        text: "Current corrected speech",
+        speakerLabel: "SPEAKER_00",
+        assignment: { kind: "unknown" },
+        assignmentSource: "manual",
+        personName: null,
+        reviewState: "confirmed",
+        providerScore: null,
+        sampleSuitability: "invalidated",
+        originalText: "Original source speech",
+        originalStartSeconds: 0,
+        originalEndSeconds: 3,
+      },
+    ],
+    removed: [{ id: noteId, revision: 3, attributionRevision: 2 }],
+    complete: true,
+  },
+};
 let backend: Backend;
 let authentications = 0;
 let opened = 0;
@@ -58,7 +101,7 @@ function request(
   mutation = false,
   headers: Record<string, string> = {},
 ) {
-  const url = new URL(`/api/trpc/${path}`, origin);
+  const url = new URL(`/api/${path}`, origin);
   if (!mutation && input !== undefined) url.searchParams.set("input", JSON.stringify(input));
   return new Request(
     url,
@@ -108,6 +151,7 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
         export * from './src/server/trpc/router';
         export * from './src/contracts/workspace';
         export { AuthError } from './src/auth/server';
+        export { POST as correctionsPOST } from './src/app/api/workspaces/[workspaceId]/notes/[noteId]/processing/[runId]/corrections/route';
       `,
       },
       tsconfig: `${root}tsconfig.json`,
@@ -125,6 +169,10 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
               external: true,
             }));
             build.onResolve({ filter: /^@\/server\/recording-api$/ }, (args) => ({
+              path: args.path,
+              external: true,
+            }));
+            build.onResolve({ filter: /^@\/server\/transcript-correction-api$/ }, (args) => ({
               path: args.path,
               external: true,
             }));
@@ -154,6 +202,16 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
         return { createRecordingRepository: () => repository };
       if (name === "@/db/transcript-correction-repository")
         return { createTranscriptCorrectionRepository: () => repository };
+      // Exercise the REST route's real input/output validation and serialization;
+      // its authenticated repository boundary is replaced just like tRPC's DB.
+      if (name === "@/server/transcript-correction-api")
+        return {
+          transcriptCorrectionResponse: async (
+            _request: Request,
+            _workspaceId: string,
+            work: (repo: typeof repository, principal: Principal) => Promise<unknown>,
+          ) => Response.json(await work(repository, user)),
+        };
       if (name === "@/server/recording-api")
         return {
           recordingEnvironment: () => {
@@ -309,5 +367,125 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
       400,
     );
     assert.equal(calls.length, 1);
+  });
+
+  void it("serializes current correction rows, ordering and revision-bearing removals through tRPC and REST", async () => {
+    const command = {
+      kind: "assign",
+      commandId: correctionResult.receipt.commandId,
+      targets: [{ id: noteId, expectedAttributionRevision: 0 }],
+      assignment: { kind: "unknown" },
+    };
+    repositoryResult = () => ({
+      ...correctionResult,
+      receipt: { ...correctionResult.receipt, fingerprint: "private command fingerprint" },
+      current: {
+        ...correctionResult.current,
+        items: correctionResult.current.items.map((turn) => ({
+          ...turn,
+          active: true,
+          workspaceId,
+        })),
+      },
+    });
+    const response = await handle(
+      request("transcripts.command", { workspaceId, noteId, runId, command }, true),
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { result: { data: correctionResult } });
+    assert.deepEqual(calls[0], {
+      method: "command",
+      args: [user, workspaceId, noteId, runId, command],
+    });
+    const rest = await backend.correctionsPOST(
+      request(
+        `workspaces/${workspaceId}/notes/${noteId}/processing/${runId}/corrections`,
+        command,
+        true,
+      ),
+      { params: Promise.resolve({ workspaceId, noteId, runId }) },
+    );
+    assert.equal(rest.status, 200);
+    assert.deepEqual(await rest.json(), correctionResult);
+    assert.deepEqual(calls[1], calls[0]);
+  });
+
+  void it("preserves successful receipt-only fallback and rejects current rows missing their ordering key", async () => {
+    const input = {
+      workspaceId,
+      noteId,
+      runId,
+      command: {
+        kind: "undo",
+        commandId: correctionResult.receipt.commandId,
+        correctionId: correctionResult.receipt.id,
+      },
+    };
+    const incomplete = {
+      receipt: correctionResult.receipt,
+      current: { items: [], removed: [], complete: false },
+    };
+    repositoryResult = () => incomplete;
+    const fallback = await handle(request("transcripts.command", input, true));
+    assert.equal(fallback.status, 200);
+    assert.deepEqual(await fallback.json(), { result: { data: incomplete } });
+    repositoryResult = () => ({
+      ...correctionResult,
+      current: {
+        ...correctionResult.current,
+        items: correctionResult.current.items.map((turn) => ({ ...turn, orderKey: undefined })),
+      },
+    });
+    const invalid = await handle(request("transcripts.command", input, true));
+    assert.equal(invalid.status, 500);
+    assert.equal(((await invalid.json()) as ErrorBody).error.data.domainCode, "internal_error");
+  });
+
+  void it("exposes list metadata without transcript while retaining the full authorized detail", async () => {
+    const note = {
+      id: noteId,
+      workspaceId,
+      title: "Private transcript",
+      transcript: "Source speech retained only in detail",
+      revision: 2,
+      createdAt: "2026-11-14T12:00:00.000Z",
+      updatedAt: "2026-11-14T12:00:00.000Z",
+      deletedAt: null,
+    };
+    repositoryResult = (method) =>
+      method === "listNotes" ? { items: [note], nextCursor: null } : note;
+    const list = await handle(request("notes.list", { workspaceId }));
+    assert.equal(list.status, 200);
+    const text = await list.text();
+    assert.doesNotMatch(text, /"transcript"|Source speech/);
+    const detail = await handle(request("notes.get", { workspaceId, id: noteId }));
+    assert.equal(detail.status, 200);
+    assert.deepEqual(await detail.json(), { result: { data: note } });
+  });
+
+  void it("returns bounded person previews and preserves full profile detail", async () => {
+    const person = {
+      id: noteId,
+      workspaceId,
+      displayName: "Profile",
+      description: "Full description ".repeat(200),
+      revision: 2,
+      createdAt: "2026-11-14T12:00:00.000Z",
+      updatedAt: "2026-11-14T12:00:00.000Z",
+      deletedAt: null,
+    };
+    const descriptionPreview = person.description.slice(0, 160);
+    repositoryResult = (method) =>
+      method === "listPeople"
+        ? { items: [{ ...person, descriptionPreview }], nextCursor: null }
+        : person;
+    const list = await handle(request("people.list", { workspaceId }));
+    assert.equal(list.status, 200);
+    const text = await list.text();
+    assert.doesNotMatch(text, /"description":/);
+    assert.ok(text.includes(descriptionPreview));
+    const detail = await handle(request("people.get", { workspaceId, id: noteId }));
+    assert.equal(detail.status, 200);
+    assert.deepEqual(await detail.json(), { result: { data: person } });
   });
 });

@@ -31,7 +31,7 @@ function fixture(transport: NonNullable<Parameters<typeof httpLink>[0]["fetch"]>
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
   const client = createTRPCClient<AppRouter>({
-    links: [httpLink({ url: "https://test.invalid/api/trpc", fetch: transport })],
+    links: [httpLink({ url: "https://test.invalid/api", fetch: transport })],
   });
   const trpc = createTRPCOptionsProxy<AppRouter>({ client, queryClient });
   return { queryClient, trpc };

@@ -4,9 +4,12 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { Plus, UserRound, UserRoundX } from "lucide-react";
 import type { Assignment, CorrectedTurn } from "@/contracts/transcript-corrections";
 import type { SavePerson } from "@/contracts/workspace";
-import { getQueryRuntime } from "@/lib/query-runtime";
+import { peopleQueryOptions } from "@/queries/people";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import type { TranscriptCorrections } from "@/hooks/use-transcript-corrections";
+import type {
+  CorrectionPreviewOptions,
+  TranscriptCorrections,
+} from "@/hooks/use-transcript-corrections";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -24,23 +27,20 @@ export function SpeakerAssignment({
   turn: CorrectedTurn;
   api: TranscriptCorrections;
   onSaved: () => void;
-  onAssign?: ((assignment: SpeakerChoice, guest?: SavePerson) => Promise<boolean>) | undefined;
+  onAssign?:
+    | ((
+        assignment: SpeakerChoice,
+        guest?: SavePerson,
+        options?: CorrectionPreviewOptions,
+      ) => Promise<boolean>)
+    | undefined;
   disabled?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const locked = disabled || api.busy || !!api.pending || !api.ready;
   const { owned, workspaceId } = api;
   const search = useDebouncedValue(query.trim());
-  const { trpc } = getQueryRuntime();
-  const people = useInfiniteQuery(
-    trpc.people.list.infiniteQueryOptions(
-      { workspaceId, q: search, limit: 30 },
-      {
-        trpc: { abortOnUnmount: true },
-        getNextPageParam: (last) => last.nextCursor ?? undefined,
-      },
-    ),
-  );
+  const people = useInfiniteQuery(peopleQueryOptions(workspaceId, search));
   const page = {
     items: people.data?.pages.flatMap((part) => part.items) ?? [],
     nextCursor: people.data?.pages.at(-1)?.nextCursor,
@@ -49,8 +49,17 @@ export function SpeakerAssignment({
   const error = people.error?.message;
   async function assign(assignment: SpeakerChoice, guest?: SavePerson) {
     if (locked) return;
+    const personName =
+      guest?.content.displayName ??
+      (assignment.kind === "person"
+        ? page.items.find((person) => person.id === assignment.personId)?.displayName
+        : undefined);
+    const options: CorrectionPreviewOptions = {
+      ...(personName ? { personName } : {}),
+      onPending: onSaved,
+    };
     const saved = onAssign
-      ? await onAssign(assignment, guest)
+      ? await onAssign(assignment, guest, options)
       : await api.submit(
           {
             kind: "assign",
@@ -59,6 +68,7 @@ export function SpeakerAssignment({
             assignment,
           },
           guest,
+          options,
         );
     if (saved && owned()) onSaved();
   }

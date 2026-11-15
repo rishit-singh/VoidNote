@@ -11,6 +11,10 @@ export const assignmentSchema = z.discriminatedUnion("kind", [
 export const correctedTurnSchema = utteranceSchema
   .extend({
     sequence: z.number().nonnegative(),
+    orderKey: z
+      .string()
+      .regex(/^[01]*$/)
+      .max(256),
     sourceUtteranceId: idSchema,
     parentId: idSchema.nullable(),
     revision: z.number().int().nonnegative(),
@@ -149,6 +153,24 @@ export const correctionReceiptSchema = z.object({
   createdAt: z.iso.datetime({ offset: true }),
   undoOf: idSchema.nullable(),
 });
+export const correctionResultSchema = z.object({
+  receipt: correctionReceiptSchema,
+  current: z.object({
+    items: z.array(correctedTurnSchema).max(MAX_CORRECTION_TARGETS),
+    removed: z
+      .array(
+        z.object({
+          id: idSchema,
+          revision: z.number().int().nonnegative(),
+          attributionRevision: z.number().int().nonnegative(),
+        }),
+      )
+      .max(MAX_CORRECTION_TARGETS),
+    // Covers every exact ID in the receipt's before/after union, not full lineage.
+    // Later splits can create descendants outside this result; always refresh.
+    complete: z.boolean(),
+  }),
+});
 export const correctionHistoryItemSchema = correctionReceiptSchema.extend({
   actorId: idSchema,
   before: z.array(correctedTurnSchema),
@@ -183,3 +205,4 @@ export type TranscriptPassage = z.infer<typeof transcriptPassageSchema>;
 export type CorrectionCommand = z.infer<typeof correctionCommandSchema>;
 export type CorrectionTarget = z.infer<typeof correctionTargetSchema>;
 export type CorrectionReceipt = z.infer<typeof correctionReceiptSchema>;
+export type CorrectionResult = z.infer<typeof correctionResultSchema>;

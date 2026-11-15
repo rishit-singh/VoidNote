@@ -135,6 +135,7 @@ test("upload, reloadable processing and timestamp playback share one persistent 
               speakerLabel: "SPEAKER_00",
               text: "Review the project tomorrow.",
               sourceUtteranceId: utteranceId,
+              orderKey: "",
               parentId: null,
               revision: 0,
               attributionRevision: 0,

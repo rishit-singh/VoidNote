@@ -115,12 +115,7 @@ export function HomeView() {
               <Link href={`/notes/${encodeURIComponent(note.id)}`} className="vn-note-row">
                 <span className="vn-note-copy">
                   <span className="vn-note-title">{note.title || "Untitled note"}</span>
-                  <span className="vn-note-meta">
-                    {meta}
-                    {note.transcript
-                      ? ` · ${note.transcript.slice(0, 100)}`
-                      : " · No transcript yet"}
-                  </span>
+                  <span className="vn-note-meta">{meta}</span>
                 </span>
                 <span className="vn-note-arrow" aria-hidden="true">
                   ↗

@@ -106,6 +106,46 @@ test("client-side return navigation reuses fresh note detail and overview caches
   expect(calls(workspace, "recordings.overview", first.id)).toHaveLength(1);
 });
 
+test("acknowledged title stays visible while the list refresh is held open", async ({
+  page,
+  workspace,
+}) => {
+  const note = workspace.seedNote({
+    title: "Before delayed refresh",
+    transcript: "Keep this text",
+  });
+  await page.goto(`/notes/${note.id}`);
+  await expectEmptyNoteReady(page, note.title);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let refreshing = false;
+  await page.route(`**/api/workspaces/${workspaceId}/notes?*`, async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    refreshing = true;
+    await held;
+    await route.fallback();
+  });
+  try {
+    await page.getByLabel("Title", { exact: true }).fill("Acknowledged without refresh");
+    await expect.poll(() => refreshing).toBe(true);
+    await expect(page.getByRole("status").filter({ hasText: /^Saved$/ })).toBeVisible();
+    await expect(
+      page
+        .getByRole("complementary")
+        .getByRole("link", { name: "Acknowledged without refresh", exact: true }),
+    ).toBeVisible();
+    expect(workspace.notes.get(note.id)?.transcript).toBe("Keep this text");
+    await page.getByLabel("Title", { exact: true }).fill("Newer typing survives");
+    await expect.poll(() => workspace.notes.get(note.id)?.title).toBe("Newer typing survives");
+    await expect(page.getByRole("status").filter({ hasText: /^Saved$/ })).toBeVisible();
+  } finally {
+    release();
+  }
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Newer typing survives");
+});
+
 test("opening a note loads sidebar notes without eagerly fetching unrelated people", async ({
   page,
   workspace,
@@ -122,4 +162,40 @@ test("opening a note loads sidebar notes without eagerly fetching unrelated peop
   expect(calls(workspace, "notes.get", unrelated.id)).toHaveLength(0);
   expect(calls(workspace, "recordings.overview", unrelated.id)).toHaveLength(0);
   expect(workspace.rpcRequests.filter((call) => call.procedure.startsWith("people."))).toEqual([]);
+});
+
+test("replayed save cannot restore a deleted note while list refresh is blocked", async ({
+  page,
+  workspace,
+}) => {
+  const note = workspace.seedNote({ title: "Deleted after uncertain save" });
+  await page.goto(`/notes/${note.id}`);
+  await expectEmptyNoteReady(page, note.title);
+  workspace.nextMutation = "lost-response";
+  await page.getByLabel("Title", { exact: true }).fill("Original committed title");
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  const command = workspace.mutations[0]!.command;
+  const committed = workspace.notes.get(note.id)!;
+  workspace.notes.set(note.id, {
+    ...committed,
+    revision: committed.revision + 1,
+    deletedAt: new Date().toISOString(),
+  });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**/api/workspaces/${workspaceId}/notes?*`, async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await held;
+    await route.fallback();
+  });
+  try {
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(page.getByText("Note not found", { exact: true })).toBeVisible();
+    await expect(page.locator(`a[href="/notes/${note.id}"]`)).toHaveCount(0);
+    expect(workspace.mutations[1]!.command).toEqual(command);
+  } finally {
+    release();
+  }
 });

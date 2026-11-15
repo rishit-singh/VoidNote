@@ -3,6 +3,7 @@ import { expect, test as base, type Route } from "@playwright/test";
 import { z } from "zod";
 import { recordingOverviewSchema } from "../../src/contracts/recording-processing";
 import { personAppearancesSchema } from "../../src/contracts/transcript-corrections";
+import { toPersonListItem } from "../../src/contracts/people";
 
 import {
   deleteSchema,
@@ -57,14 +58,14 @@ function installRPCFixtureAdapter({ origin }: { origin: string }) {
       resource instanceof Request ? resource.url : String(resource),
       location.href,
     );
-    if (url.origin !== origin || !url.pathname.startsWith("/api/trpc/"))
+    if (url.origin !== origin || !/^\/api\/[^/]+\.[^/]+$/.test(url.pathname))
       return nativeFetch(resource, options);
 
     // The current client uses httpLink. Fail closed if batching is introduced
     // without updating this adapter, rather than silently simulating a batch.
     if (url.searchParams.has("batch")) return nativeFetch(resource, options);
     const request = new Request(resource, options);
-    const procedure = decodeURIComponent(url.pathname.slice("/api/trpc/".length));
+    const procedure = decodeURIComponent(url.pathname.slice("/api/".length));
     const raw: unknown =
       request.method === "GET"
         ? JSON.parse(url.searchParams.get("input") ?? "null")
@@ -379,17 +380,20 @@ export class WorkspaceFixture {
             : { status: 404, json: { error: "Record not found.", code: "not_found" } },
         );
       } else {
-        const items = [...records.values()].filter(
+        const recordsInScope = [...records.values()].filter(
           (record) => record.workspaceId === this.session?.workspace.id && !record.deletedAt,
         );
         const q = url.searchParams.get("q")?.toLowerCase();
+        const items = recordsInScope.map((record) =>
+          "displayName" in record ? toPersonListItem(record) : record,
+        );
         const schema = collection === "notes" ? noteListSchema : personListSchema;
         await route.fulfill({
           json: schema.parse({
             items: q
               ? items.filter((record) =>
                   "displayName" in record
-                    ? record.displayName.toLowerCase().includes(q)
+                    ? record.displayName.toLowerCase().startsWith(q)
                     : record.title.toLowerCase().startsWith(q),
                 )
               : items,

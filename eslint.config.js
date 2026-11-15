@@ -2,8 +2,27 @@ import js from "@eslint/js";
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import prettier from "eslint-config-prettier/flat";
+import stylistic from "@stylistic/eslint-plugin";
+import simpleImportSort from "eslint-plugin-simple-import-sort";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+
+// Grow this list with each verified domain slice instead of reformatting unrelated work.
+const qualityFiles = [
+  "src/config/**/*.ts",
+  "src/queries/**/*.{ts,tsx}",
+  "src/{contracts,server,db,stores}/notes{.ts,/**/*.ts}",
+  "src/{contracts,server,db,stores}/people{.ts,/**/*.ts}",
+  "src/server/trpc/http.ts",
+  "src/app/api/[[]procedure]/route.ts",
+  "src/lib/{query-runtime,workspace-api}.ts",
+  "src/hooks/{use-note-autosave,use-workspace-queries,use-transcript-corrections}.ts",
+];
+
+const domainImports = {
+  regex: "^@/(contracts|server|db|queries|stores|components)/(notes|people)/",
+  message: "Import the domain's public entry point; internal files use sibling imports.",
+};
 
 export default defineConfig(
   globalIgnores([
@@ -40,10 +59,15 @@ export default defineConfig(
     },
     rules: {
       "@typescript-eslint/switch-exhaustiveness-check": "error",
+      "no-restricted-imports": ["error", { patterns: [domainImports] }],
     },
   },
   {
-    files: ["src/{components,hooks,stores,lib}/**/*.{ts,tsx}", "src/App.tsx", "src/main.tsx"],
+    files: [
+      "src/{components,hooks,stores,queries,lib}/**/*.{ts,tsx}",
+      "src/App.tsx",
+      "src/main.tsx",
+    ],
     languageOptions: { globals: globals.browser },
   },
   {
@@ -51,12 +75,13 @@ export default defineConfig(
     languageOptions: { globals: globals.node },
   },
   {
-    files: ["src/{components,hooks,stores}/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
+    files: ["src/{components,hooks,stores,queries}/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",
         {
           patterns: [
+            domainImports,
             {
               group: [
                 "@/db/**",
@@ -96,6 +121,7 @@ export default defineConfig(
         "error",
         {
           patterns: [
+            domainImports,
             {
               group: [
                 "next",
@@ -125,4 +151,25 @@ export default defineConfig(
     },
   },
   prettier,
+  {
+    files: qualityFiles,
+    plugins: { "@stylistic": stylistic, "simple-import-sort": simpleImportSort },
+    rules: {
+      curly: ["error", "all"],
+      "@typescript-eslint/consistent-type-imports": [
+        "error",
+        { prefer: "type-imports", fixStyle: "separate-type-imports" },
+      ],
+      "simple-import-sort/imports": "error",
+      "simple-import-sort/exports": "error",
+      // These add semantic spacing without fighting Prettier's line wrapping.
+      "@stylistic/padding-line-between-statements": [
+        "error",
+        { blankLine: "always", prev: "*", next: "return" },
+        { blankLine: "always", prev: "*", next: ["function", "class", "interface", "type"] },
+        { blankLine: "always", prev: ["function", "class", "interface", "type"], next: "*" },
+        { blankLine: "always", prev: "block-like", next: "*" },
+      ],
+    },
+  },
 );

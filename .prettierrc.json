@@ -1,5 +1,6 @@
 {
   "printWidth": 100,
+  "objectWrap": "preserve",
   "trailingComma": "all",
   "semi": true,
   "singleQuote": false

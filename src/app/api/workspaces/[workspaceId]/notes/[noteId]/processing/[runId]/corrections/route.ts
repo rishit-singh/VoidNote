@@ -1,6 +1,6 @@
 import {
   correctionCommandSchema,
-  correctionReceiptSchema,
+  correctionResultSchema,
   correctedTranscriptPageSchema,
 } from "@/contracts/transcript-corrections";
 import { readJson } from "@/server/api";
@@ -27,7 +27,7 @@ export async function GET(request: Request, context: CorrectionRouteContext) {
 export async function POST(request: Request, context: CorrectionRouteContext) {
   const { workspaceId, noteId, runId } = await context.params;
   return transcriptCorrectionResponse(request, workspaceId, async (repo, principal) =>
-    correctionReceiptSchema.parse(
+    correctionResultSchema.parse(
       await repo.command(
         principal,
         workspaceId,

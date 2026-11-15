@@ -5,7 +5,8 @@ import { useNoteStore } from "../../src/stores/use-note-store";
 import { isOwnedSession } from "../../src/stores/use-recording-store";
 import type { LocalRecordingSession } from "../../src/lib/recording-schemas";
 import { ApiError, workspaceApi } from "../../src/lib/workspace-api";
-import type { NoteRecord, PersonRecord, SaveNote } from "../../src/contracts/workspace";
+import type { NoteRecord, PersonRecord, SaveNote, SavePerson } from "../../src/contracts/workspace";
+import { workspaceRecovery } from "../../src/stores/workspace-recovery";
 
 const originalApi = { ...workspaceApi };
 const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
@@ -18,10 +19,12 @@ let failWrites = false;
 let mutationStatus = 200;
 let logoutStatus = 200;
 let commands: SaveNote[] = [];
+let personCommands: SavePerson[] = [];
 let sessionCalls = 0;
 let noteListCalls = 0;
 let peopleListCalls = 0;
 const records = new Map<string, NoteRecord>();
+const personRecords = new Map<string, PersonRecord>();
 
 void describe("workspace store recovery boundaries (no database)", { concurrency: false }, () => {
   beforeEach(async () => {
@@ -30,7 +33,9 @@ void describe("workspace store recovery boundaries (no database)", { concurrency
     useNoteStore.setState(useNoteStore.getInitialState());
     values.clear();
     records.clear();
+    personRecords.clear();
     commands = [];
+    personCommands = [];
     mutationStatus = 200;
     logoutStatus = 200;
     sessionCalls = 0;
@@ -82,6 +87,30 @@ void describe("workspace store recovery boundaries (no database)", { concurrency
       const record = records.get(id);
       return record ? Promise.resolve(record) : Promise.reject(new ApiError("Missing", 404));
     };
+    workspaceApi.savePerson = (workspaceId, command) => {
+      assert.equal(workspaceId, scope.workspace.id);
+      assert.ok([...values.values()].some((raw) => raw.includes(command.commandId)));
+      personCommands.push(command);
+      if (mutationStatus !== 200)
+        return Promise.reject(new ApiError("Injected failure", mutationStatus));
+      const existing = personRecords.get(command.id);
+      const record: PersonRecord = {
+        ...command.content,
+        id: command.id,
+        workspaceId,
+        revision: (existing?.revision ?? 0) + 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        deletedAt: null,
+      };
+      personRecords.set(command.id, record);
+      return Promise.resolve(record);
+    };
+    workspaceApi.person = (workspaceId, id) => {
+      assert.equal(workspaceId, scope.workspace.id);
+      const record = personRecords.get(id);
+      return record ? Promise.resolve(record) : Promise.reject(new ApiError("Missing", 404));
+    };
     workspaceApi.notes = () => {
       noteListCalls++;
       return Promise.resolve({ items: [], nextCursor: null });
@@ -122,6 +151,94 @@ void describe("workspace store recovery boundaries (no database)", { concurrency
     await useNoteStore.getState().saveNote(note.id);
     assert.equal(commands.length, 0);
     assert.match(useNoteStore.getState().recoveryError!, /could not be stored/);
+    assert.equal(await useNoteStore.getState().saveAll(), false);
+  });
+
+  void it("preserves newer draft generations and recorder handles during save acknowledgements", async () => {
+    const note = useNoteStore.getState().createNote();
+    const key = `note:${note.id}`;
+    useNoteStore.getState().upsertNote({ ...note, title: "Original request" });
+    const saveNote = workspaceApi.saveNote;
+    let release!: () => void;
+    workspaceApi.saveNote = async (...args) => {
+      const record = await saveNote(...args);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return record;
+    };
+    const firstSave = useNoteStore.getState().saveNote(note.id);
+    await Promise.resolve();
+    const originalGeneration = useNoteStore.getState().edits[key]!.generation;
+    const audio = new Blob(["captured audio"], { type: "audio/webm" });
+    const recordingSessionId = randomUUID();
+    useNoteStore.getState().upsertNote({
+      ...note,
+      title: "Newer draft",
+      audio,
+      url: "blob:first-capture",
+      recordingSessionId,
+    });
+    release();
+    await firstSave;
+    assert.equal(commands[0]?.content.title, "Original request");
+    assert.equal(useNoteStore.getState().noteRecords[note.id]?.title, "Original request");
+    assert.equal(useNoteStore.getState().notes[0]?.title, "Newer draft");
+    assert.equal(useNoteStore.getState().edits[key]?.generation, originalGeneration + 1);
+    assert.equal(useNoteStore.getState().edits[key]?.dirty, true);
+
+    const secondSave = useNoteStore.getState().saveNote(note.id);
+    await Promise.resolve();
+    const current = useNoteStore.getState().notes[0]!;
+    const currentGeneration = useNoteStore.getState().edits[key]!.generation;
+    useNoteStore.getState().upsertNote({ ...current, url: "blob:latest-capture" });
+    assert.equal(useNoteStore.getState().edits[key]?.generation, currentGeneration);
+    release();
+    await secondSave;
+    const acknowledged = useNoteStore.getState().notes[0]!;
+    assert.equal(commands[1]?.expectedRevision, 1);
+    assert.equal(commands[1]?.content.title, "Newer draft");
+    assert.equal(acknowledged.title, "Newer draft");
+    assert.equal(acknowledged.audio, audio);
+    assert.equal(acknowledged.url, "blob:latest-capture");
+    assert.equal(acknowledged.recordingSessionId, recordingSessionId);
+    assert.equal(useNoteStore.getState().edits[key]?.dirty, false);
+    assert.equal(useNoteStore.getState().edits[key]?.pending, null);
+  });
+
+  void it("verifies a replayed create receipt against the live tombstone and retains the newer draft", async () => {
+    const note = useNoteStore.getState().createNote();
+    useNoteStore.getState().upsertNote({ ...note, title: "Original request" });
+    mutationStatus = 503;
+    await useNoteStore.getState().saveNote(note.id);
+    const original = commands[0]!;
+    useNoteStore.getState().upsertNote({ ...note, title: "Newer draft" });
+    const receipt: NoteRecord = {
+      ...original.content,
+      id: note.id,
+      workspaceId: scope.workspace.id,
+      revision: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      deletedAt: null,
+    };
+    workspaceApi.saveNote = (_workspaceId, command) => {
+      assert.deepEqual(command, original);
+      return Promise.resolve(receipt);
+    };
+    workspaceApi.note = (_workspaceId, id, includeDeleted) => {
+      assert.equal(id, note.id);
+      assert.equal(includeDeleted, true);
+      return Promise.resolve({ ...receipt, revision: 2, deletedAt: new Date().toISOString() });
+    };
+    await useNoteStore.getState().retry("note", note.id);
+    assert.equal(useNoteStore.getState().notes.length, 0);
+    assert.equal(useNoteStore.getState().noteRecords[note.id], undefined);
+    assert.equal(useNoteStore.getState().unavailable[`note:${note.id}`], "missing");
+    const [retained] = await workspaceRecovery(scope).read();
+    assert.equal(retained?.entity === "note" && retained.draft.title, "Newer draft");
+    assert.equal(retained?.edit.pending, null);
+    assert.equal(retained?.edit.conflict, 2);
     assert.equal(await useNoteStore.getState().saveAll(), false);
   });
 
@@ -299,6 +416,274 @@ void describe("workspace store recovery boundaries (no database)", { concurrency
     assert.equal(useNoteStore.getState().edits[`note:${id}`], edit);
     useNoteStore.getState().reconcileNote(record);
     assert.equal(useNoteStore.getState().noteRecords[id]?.revision, 2);
+  });
+
+  void it("preserves newer person drafts during pending saves and acknowledges only the sent generation", async () => {
+    const person = useNoteStore.getState().createPerson();
+    const key = `person:${person.id}`;
+    useNoteStore.getState().updatePerson({ ...person, displayName: "Original name" });
+    const savePerson = workspaceApi.savePerson;
+    let release!: () => void;
+    workspaceApi.savePerson = async (...args) => {
+      assert.deepEqual(args[2], { replaying: false });
+      const record = await savePerson(...args);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return record;
+    };
+    const firstSave = useNoteStore.getState().savePerson(person.id);
+    await Promise.resolve();
+    const pending = useNoteStore.getState().edits[key]!.pending!;
+    useNoteStore.getState().updatePerson({
+      ...person,
+      displayName: "Newer name",
+      description: "Newer description",
+    });
+    assert.equal(useNoteStore.getState().edits[key]?.pending, pending);
+    assert.equal(useNoteStore.getState().edits[key]?.generation, pending.generation + 1);
+    const [saved] = await workspaceRecovery(scope).read();
+    assert.equal(saved?.entity === "person" && saved.draft.displayName, "Newer name");
+    assert.deepEqual(saved?.edit.pending, pending);
+    release();
+    await firstSave;
+    assert.equal(useNoteStore.getState().personRecords[person.id]?.displayName, "Original name");
+    assert.equal(useNoteStore.getState().people[0]?.displayName, "Newer name");
+    assert.equal(useNoteStore.getState().edits[key]?.dirty, true);
+    assert.equal(useNoteStore.getState().edits[key]?.baseRevision, 1);
+
+    workspaceApi.savePerson = savePerson;
+    await useNoteStore.getState().savePerson(person.id);
+    assert.equal(personCommands[1]?.expectedRevision, 1);
+    assert.notEqual(personCommands[1]?.commandId, pending.command.commandId);
+    assert.deepEqual(personCommands[1]?.content, {
+      displayName: "Newer name",
+      description: "Newer description",
+    });
+    assert.equal(useNoteStore.getState().edits[key]?.dirty, false);
+    assert.equal(useNoteStore.getState().edits[key]?.pending, null);
+  });
+
+  void it("recovers full person descriptions and replays the exact command before saving newer edits", async () => {
+    const person = useNoteStore.getState().createPerson();
+    const description = `${"Original full description. ".repeat(100)}\nEnd of original description.`;
+    useNoteStore.getState().updatePerson({ ...person, displayName: "Original", description });
+    mutationStatus = 503;
+    await useNoteStore.getState().savePerson(person.id);
+    const original = personCommands[0]!;
+    assert.equal(original.content.description, description);
+    const newerDescription = `${description}\nNewer unsaved ending.`;
+    useNoteStore.getState().updatePerson({
+      ...person,
+      displayName: "Newer",
+      description: newerDescription,
+    });
+    useNoteStore.getState().clearSession();
+    await useNoteStore.getState().refreshSession();
+    assert.equal(useNoteStore.getState().recoveredDraftCount, 1);
+    assert.equal(useNoteStore.getState().people[0]?.description, newerDescription);
+    const savePerson = workspaceApi.savePerson;
+    workspaceApi.savePerson = (...args) => {
+      assert.deepEqual(args[2], { replaying: true });
+      return savePerson(...args);
+    };
+    mutationStatus = 200;
+    await useNoteStore.getState().retry("person", person.id);
+    assert.deepEqual(personCommands[1], original);
+    assert.equal(useNoteStore.getState().people[0]?.description, newerDescription);
+    assert.equal(useNoteStore.getState().edits[`person:${person.id}`]?.dirty, true);
+    workspaceApi.savePerson = savePerson;
+    await useNoteStore.getState().savePerson(person.id);
+    assert.equal(personCommands[2]?.content.description, newerDescription);
+    assert.equal(personCommands[2]?.expectedRevision, 1);
+  });
+
+  for (const outcome of ["tombstone", "404"] as const) {
+    void it(`rejects person edits during a deferred conflict discard returning ${outcome}`, async () => {
+      const person = useNoteStore.getState().createPerson();
+      const key = `person:${person.id}`;
+      useNoteStore.getState().updatePerson({ ...person, displayName: "Saved name" });
+      await useNoteStore.getState().savePerson(person.id);
+      const record = personRecords.get(person.id)!;
+      useNoteStore.getState().updatePerson({
+        ...person,
+        displayName: "Draft chosen for discard",
+        description: "Accepted before the discard request",
+      });
+      mutationStatus = 409;
+      await useNoteStore.getState().savePerson(person.id);
+      assert.notEqual(useNoteStore.getState().edits[key]?.conflict, null);
+      const acceptedDraft = useNoteStore.getState().people[0]!;
+      let resolveRead!: (record: PersonRecord) => void;
+      let rejectRead!: (error: Error) => void;
+      workspaceApi.person = (workspaceId, id, includeDeleted) => {
+        assert.equal(workspaceId, scope.workspace.id);
+        assert.equal(id, person.id);
+        assert.equal(includeDeleted, true);
+        return new Promise<PersonRecord>((resolve, reject) => {
+          resolveRead = resolve;
+          rejectRead = reject;
+        });
+      };
+      const discarding = useNoteStore.getState().resolveConflict("person", person.id, false);
+      const resolvingEdit = useNoteStore.getState().edits[key]!;
+      assert.equal(resolvingEdit.saving, true);
+      assert.equal(resolvingEdit.pending, null);
+      useNoteStore.getState().updatePerson({
+        ...acceptedDraft,
+        displayName: "Attempted after discard started",
+        description: "This must never become accepted draft input",
+      });
+      assert.equal(useNoteStore.getState().people[0], acceptedDraft);
+      assert.equal(useNoteStore.getState().edits[key], resolvingEdit);
+      const [stored] = await workspaceRecovery(scope).read();
+      assert.equal(
+        stored?.entity === "person" && stored.draft.displayName,
+        acceptedDraft.displayName,
+      );
+      assert.equal(
+        stored?.entity === "person" && stored.draft.description,
+        acceptedDraft.description,
+      );
+      assert.equal(stored?.edit.generation, resolvingEdit.generation);
+
+      if (outcome === "tombstone") {
+        resolveRead({ ...record, revision: 2, deletedAt: new Date().toISOString() });
+      } else {
+        rejectRead(new ApiError("Missing", 404));
+      }
+      await discarding;
+      assert.equal(useNoteStore.getState().people.length, 0);
+      assert.equal(useNoteStore.getState().currentPersonId, null);
+      assert.equal(useNoteStore.getState().edits[key], undefined);
+      assert.equal(useNoteStore.getState().unavailable[key], "missing");
+      assert.deepEqual(useNoteStore.getState().lastDeleted, {
+        entityType: "person",
+        id: person.id,
+      });
+      assert.deepEqual(await workspaceRecovery(scope).read(), []);
+    });
+  }
+
+  void it("keeps person deletion intent fixed while pending and removes the acknowledged draft", async () => {
+    const person = useNoteStore.getState().createPerson();
+    useNoteStore.getState().updatePerson({ ...person, displayName: "Delete me" });
+    await useNoteStore.getState().savePerson(person.id);
+    const record = personRecords.get(person.id)!;
+    let release!: (record: PersonRecord) => void;
+    workspaceApi.deletePerson = () =>
+      new Promise<PersonRecord>((resolve) => {
+        release = resolve;
+      });
+    const deleting = useNoteStore.getState().deletePerson(person.id);
+    const pending = useNoteStore.getState().edits[`person:${person.id}`]!;
+    useNoteStore.getState().updatePerson({ ...person, displayName: "Ignored while deleting" });
+    assert.equal(useNoteStore.getState().people[0]?.displayName, "Delete me");
+    assert.equal(useNoteStore.getState().edits[`person:${person.id}`], pending);
+    release({ ...record, revision: 2, deletedAt: new Date().toISOString() });
+    await deleting;
+    assert.equal(useNoteStore.getState().people.length, 0);
+    assert.equal(useNoteStore.getState().currentPersonId, null);
+    assert.equal(useNoteStore.getState().edits[`person:${person.id}`], undefined);
+    assert.deepEqual(useNoteStore.getState().lastDeleted, { entityType: "person", id: person.id });
+  });
+
+  void it("verifies replayed person receipts against current deletion and retains newer recovery", async () => {
+    const person = useNoteStore.getState().createPerson();
+    useNoteStore.getState().updatePerson({ ...person, displayName: "Original" });
+    mutationStatus = 503;
+    await useNoteStore.getState().savePerson(person.id);
+    const original = personCommands[0]!;
+    useNoteStore.getState().updatePerson({ ...person, displayName: "Newer" });
+    const receipt: PersonRecord = {
+      ...original.content,
+      id: person.id,
+      workspaceId: scope.workspace.id,
+      revision: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      deletedAt: null,
+    };
+    workspaceApi.savePerson = (_workspaceId, command, options) => {
+      assert.deepEqual(command, original);
+      assert.deepEqual(options, { replaying: true });
+      return Promise.resolve(receipt);
+    };
+    workspaceApi.person = (_workspaceId, id, includeDeleted) => {
+      assert.equal(id, person.id);
+      assert.equal(includeDeleted, true);
+      return Promise.resolve({ ...receipt, revision: 2, deletedAt: new Date().toISOString() });
+    };
+    await useNoteStore.getState().retry("person", person.id);
+    assert.equal(useNoteStore.getState().people.length, 0);
+    assert.equal(useNoteStore.getState().unavailable[`person:${person.id}`], "missing");
+    const [retained] = await workspaceRecovery(scope).read();
+    assert.equal(retained?.entity === "person" && retained.draft.displayName, "Newer");
+    assert.equal(retained?.edit.pending, null);
+    assert.equal(retained?.edit.conflict, 2);
+    assert.equal(await useNoteStore.getState().saveAll(), false);
+  });
+
+  void it("keeps newer acknowledged person revisions when an older save completes", async () => {
+    const person = useNoteStore.getState().createPerson();
+    useNoteStore.getState().updatePerson({ ...person, displayName: "Original" });
+    const savePerson = workspaceApi.savePerson;
+    let release!: () => void;
+    workspaceApi.savePerson = async (...args) => {
+      const record = await savePerson(...args);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return record;
+    };
+    const saving = useNoteStore.getState().savePerson(person.id);
+    await Promise.resolve();
+    useNoteStore.getState().updatePerson({ ...person, displayName: "Newer local" });
+    useNoteStore.getState().reconcilePerson({
+      ...personRecords.get(person.id)!,
+      revision: 2,
+      displayName: "Newer remote",
+    });
+    release();
+    await saving;
+    assert.equal(useNoteStore.getState().personRecords[person.id]?.displayName, "Newer remote");
+    assert.equal(useNoteStore.getState().people[0]?.displayName, "Newer local");
+    const edit = useNoteStore.getState().edits[`person:${person.id}`]!;
+    assert.equal(edit.baseRevision, 1);
+    assert.equal(edit.conflict, 2);
+    assert.equal(edit.dirty, true);
+    assert.equal(edit.pending, null);
+    assert.equal(edit.saving, false);
+  });
+
+  void it("ignores a late person replay validation after the account epoch changes", async () => {
+    const person = useNoteStore.getState().createPerson();
+    useNoteStore.getState().updatePerson({ ...person, displayName: "Original" });
+    mutationStatus = 503;
+    await useNoteStore.getState().savePerson(person.id);
+    const original = personCommands[0]!;
+    let release!: (record: PersonRecord) => void;
+    let started!: () => void;
+    const validating = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    workspaceApi.person = () => {
+      started();
+      return new Promise<PersonRecord>((resolve) => {
+        release = resolve;
+      });
+    };
+    mutationStatus = 200;
+    const replay = useNoteStore.getState().retry("person", person.id);
+    await validating;
+    useNoteStore.getState().clearSession();
+    release(personRecords.get(person.id)!);
+    await replay;
+    assert.equal(useNoteStore.getState().session, null);
+    assert.equal(useNoteStore.getState().people.length, 0);
+    assert.deepEqual(useNoteStore.getState().personRecords, {});
+    const [retained] = await workspaceRecovery(scope).read();
+    assert.deepEqual(retained?.edit.pending?.command, original);
   });
 
   void it("reconciles person baselines monotonically without replacing edits or accepting stale scopes", () => {

@@ -16,8 +16,8 @@ class Logger {
 
   constructor(config: Partial<LoggerConfig> = {}) {
     this.config = {
-      isProduction: process.env.NODE_ENV === 'production',
-      debugEnabled: process.env.NODE_ENV !== 'production',
+      isProduction: process.env.NODE_ENV === "production",
+      debugEnabled: process.env.NODE_ENV !== "production",
       logLevel: LogLevel.INFO,
       ...config,
     };
@@ -28,12 +28,27 @@ class Logger {
     return now.toISOString();
   }
 
-  private formatMessage(level: string, message: string, ...args: any[]): string {
+  private serializeArg(arg: unknown): string {
+    if (typeof arg === "string") {
+      return arg;
+    }
+
+    if (arg instanceof Error) {
+      return `${arg.name}: ${arg.message}`;
+    }
+
+    if (typeof arg === "object" && arg !== null) {
+      return JSON.stringify(arg, null, 2);
+    }
+
+    return String(arg);
+  }
+
+  private formatMessage(level: string, message: string, ...args: unknown[]): string {
     const timestamp = this.formatTimestamp();
-    const formattedArgs = args.length > 0 ? ` ${args.map(arg => 
-      typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-    ).join(' ')}` : '';
-    
+    const formattedArgs =
+      args.length > 0 ? ` ${args.map((arg) => this.serializeArg(arg)).join(" ")}` : "";
+
     return `[${timestamp}] [${level}] ${message}${formattedArgs}`;
   }
 
@@ -41,35 +56,35 @@ class Logger {
     if (this.config.isProduction && level < LogLevel.WARN) {
       return false;
     }
-    
+
     if (!this.config.debugEnabled && level === LogLevel.DEBUG) {
       return false;
     }
-    
+
     return level >= this.config.logLevel;
   }
 
-  debug(message: string, ...args: any[]): void {
+  debug(message: string, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.DEBUG)) {
-      console.debug(this.formatMessage('DEBUG', message, ...args));
+      console.debug(this.formatMessage("DEBUG", message, ...args));
     }
   }
 
-  info(message: string, ...args: any[]): void {
+  info(message: string, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.INFO)) {
-      console.info(this.formatMessage('INFO', message, ...args));
+      console.info(this.formatMessage("INFO", message, ...args));
     }
   }
 
-  warn(message: string, ...args: any[]): void {
+  warn(message: string, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.WARN)) {
-      console.warn(this.formatMessage('WARN', message, ...args));
+      console.warn(this.formatMessage("WARN", message, ...args));
     }
   }
 
-  error(message: string, ...args: any[]): void {
+  error(message: string, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.ERROR)) {
-      console.error(this.formatMessage('ERROR', message, ...args));
+      console.error(this.formatMessage("ERROR", message, ...args));
     }
   }
 
@@ -87,4 +102,4 @@ const logger = new Logger();
 
 // Export both the Logger class and default instance
 export { Logger, LogLevel, type LoggerConfig };
-export default logger; 
+export default logger;

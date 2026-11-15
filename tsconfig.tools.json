@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true
+  },
+  "exclude": ["tests/worker/**", "tests/auth/**", "tests/db/**", "tests/e2e/**"],
+  "include": [
+    "drizzle.config.ts",
+    "open-next.config.ts",
+    "playwright.config.ts",
+    "scripts/*.ts",
+    "vite.config.ts",
+    "tests/**/*.ts"
+  ]
+}

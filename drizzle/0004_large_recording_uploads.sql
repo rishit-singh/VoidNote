@@ -1,0 +1,2 @@
+ALTER TABLE "recordings" DROP CONSTRAINT "recordings_bounds";--> statement-breakpoint
+ALTER TABLE "recordings" ADD CONSTRAINT "recordings_bounds" CHECK ("recordings"."bytes" > 0 and "recordings"."bytes" <= 1073741824 and "recordings"."duration_seconds" > 0 and "recordings"."duration_seconds" <= 7200);

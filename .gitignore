@@ -11,6 +11,18 @@ node_modules
 dist
 dist-ssr
 *.local
+.next
+.open-next
+.wrangler
+supabase/.temp/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+playwright-report
+test-results
+coverage
+cloudflare-env.d.ts
+next-env.d.ts
 
 # Editor directories and files
 .vscode/*
@@ -26,4 +38,3 @@ dist-ssr
 
 prog.md
 *.tsbuildinfo
-

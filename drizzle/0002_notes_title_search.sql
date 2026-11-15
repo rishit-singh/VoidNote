@@ -1,0 +1,1 @@
+CREATE INDEX "notes_title_prefix_idx" ON "notes" USING btree ("workspace_id",lower("title") text_pattern_ops) WHERE "notes"."deleted_at" is null;

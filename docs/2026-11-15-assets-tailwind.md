@@ -36,9 +36,16 @@ See [`src/assets/README.md`](../src/assets/README.md) for asset authoring.
   symlink.
 - Built-Worker Chromium checks: 32 passed in the combined assets, landing, shell,
   workspace and transcript-correction run. The delayed correction/navigation test
-  timed out waiting for Retry, then passed unchanged in an isolated rerun. This
-  remains a timing-sensitive test, not evidence of a uniformly clean suite run.
+  timed out waiting for Retry, then passed unchanged in an isolated rerun.
   One Markdown-export demo was skipped because its feature flag was disabled.
+- PR #8 CI reproduced that failure (69 browser tests passed, one skipped).
+  The test released its delayed acknowledgement before Next navigation committed,
+  allowing the original editor to legitimately clear recovery. It now waits for
+  the destination URL/title and old editor disappearance before releasing the
+  response, observes acknowledgement, and verifies exact command retry on return.
+  The corrected test passed ten consecutive built-Worker executions with CI
+  settings, one worker and no retries; focused lint, formatting and e2e TypeScript
+  checks also passed.
 - Favicon metadata, SVG/ICO/Apple icon responses, conventional `/favicon.ico`
   fallback and legacy `/logo.svg` compatibility passed.
 - Landing tests cover widths 320–768px and 1440px, live reduced-motion changes,

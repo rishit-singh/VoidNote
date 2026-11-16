@@ -41,11 +41,20 @@ export function HomeView() {
   );
 
   return (
-    <section className="vn-page vn-home" aria-labelledby="notes-title">
-      <div className="vn-page-heading">
-        <h1 id="notes-title">Notes</h1>
+    <section
+      className="mx-auto flex w-full max-w-[960px] flex-[1_0_auto] flex-col gap-section px-[clamp(24px,5.5vw,80px)] pb-10 pt-14 [@media(max-width:760px)]:gap-[22px] [@media(max-width:760px)]:px-6 [@media(max-width:760px)]:pb-8 [@media(max-width:760px)]:pt-[30px]"
+      aria-labelledby="notes-title"
+    >
+      <div className="flex min-h-11 items-center justify-between gap-4">
+        <h1
+          id="notes-title"
+          className="m-0 text-title text-vn-text [@media(max-width:760px)]:text-[24px]"
+        >
+          Notes
+        </h1>
         <Button
-          variant="outline"
+          variant="workspace-outline"
+          className="h-11"
           aria-label="New note"
           disabled={!ready}
           onClick={() => {
@@ -56,12 +65,16 @@ export function HomeView() {
           + New note
         </Button>
       </div>
-      <div className="vn-search">
-        <MagnifyingGlassIcon aria-hidden="true" />
+      <div className="flex h-[46px] flex-none items-center gap-3 rounded-[4px] border border-vn-stroke px-3.5">
+        <MagnifyingGlassIcon
+          className="size-4 flex-none fill-none stroke-vn-muted stroke-[1.2]"
+          aria-hidden="true"
+        />
         <label className="sr-only" htmlFor="note-search">
           Search notes
         </label>
         <Input
+          variant="search"
           id="note-search"
           type="search"
           maxLength={200}
@@ -71,14 +84,14 @@ export function HomeView() {
         />
       </div>
       {notesLoading && visibleNotes.length === 0 && (
-        <div className="vn-note-skeleton" role="status" aria-label="Loading notes">
-          <Skeleton />
-          <Skeleton />
-          <Skeleton />
+        <div className="flex flex-col" role="status" aria-label="Loading notes">
+          <Skeleton variant="row" className="h-[92px]" />
+          <Skeleton variant="row" className="h-[92px]" />
+          <Skeleton variant="row" className="h-[92px]" />
         </div>
       )}
       {notesError && (
-        <Alert variant="destructive" className="vn-error">
+        <Alert variant="error">
           <AlertDescription>{notesError}</AlertDescription>
           <Button variant="outline" onClick={() => void result.refetch()}>
             Try again
@@ -86,7 +99,7 @@ export function HomeView() {
         </Alert>
       )}
       {!notesLoading && !notesError && visibleNotes.length === 0 && (
-        <Empty className="vn-empty">
+        <Empty variant="notes">
           <EmptyHeader>
             <EmptyTitle>{normalizedSearch ? "No matching notes" : "No notes yet"}</EmptyTitle>
             <EmptyDescription>
@@ -97,7 +110,7 @@ export function HomeView() {
           </EmptyHeader>
         </Empty>
       )}
-      <ul className="vn-note-list" aria-label="Notes">
+      <ul className="m-0 flex list-none flex-col p-0" aria-label="Notes">
         {visibleNotes.map((note) => {
           const edit = edits[`note:${note.id}`];
           const date = note.updatedAt
@@ -112,12 +125,20 @@ export function HomeView() {
               : "Draft";
           return (
             <li key={note.id}>
-              <Link href={`/notes/${encodeURIComponent(note.id)}`} className="vn-note-row">
-                <span className="vn-note-copy">
-                  <span className="vn-note-title">{note.title || "Untitled note"}</span>
-                  <span className="vn-note-meta">{meta}</span>
+              <Link
+                href={`/notes/${encodeURIComponent(note.id)}`}
+                className="group/note flex min-h-[92px] items-center gap-3 border-b border-vn-stroke py-[18px] [@media(max-width:760px)]:min-h-[86px]"
+              >
+                <span className="flex min-w-0 flex-1 flex-col gap-[7px]">
+                  <span className="truncate text-[14px] text-vn-text group-hover/note:underline group-hover/note:underline-offset-4">
+                    {note.title || "Untitled note"}
+                  </span>
+                  <span className="truncate text-[12px] text-vn-muted">{meta}</span>
                 </span>
-                <span className="vn-note-arrow" aria-hidden="true">
+                <span
+                  className="flex size-11 flex-none items-center justify-center text-[16px] text-vn-muted [@media(max-width:760px)]:w-10"
+                  aria-hidden="true"
+                >
                   ↗
                 </span>
               </Link>

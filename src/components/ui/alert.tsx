@@ -11,6 +11,10 @@ const alertVariants = cva(
         default: "bg-background text-foreground",
         destructive:
           "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
+        notice:
+          "flex items-start gap-2.5 border-vn-stroke-strong px-3.5 py-3 text-vn-secondary dark:border-destructive [&>svg]:size-4 [&>svg]:flex-none [&>svg]:text-vn-muted",
+        error:
+          "flex flex-wrap items-center gap-3 border-destructive/50 text-vn-error dark:border-destructive [&>svg]:text-destructive [&_p]:m-0",
       },
     },
     defaultVariants: {

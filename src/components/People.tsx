@@ -135,21 +135,27 @@ export function People({ profileId }: { profileId?: string }) {
 
   return (
     <section
-      className="vn-page vn-profiles"
+      className="group/profiles mx-0 flex w-full max-w-none flex-[1_0_auto] flex-col gap-section px-[clamp(24px,4vw,56px)] pb-10 pt-14 [@media(max-width:760px)]:gap-[22px] [@media(max-width:760px)]:px-6 [@media(max-width:760px)]:pb-8 [@media(max-width:760px)]:pt-[30px]"
       data-detail={!!profileId}
       aria-labelledby="profiles-title"
     >
-      <div className="vn-page-heading">
+      <div className="flex min-h-11 items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           {profileId && (
-            <Link href="/profiles" className="vn-back-link">
+            <Link href="/profiles" className="text-[12px] text-vn-muted">
               ← Profiles
             </Link>
           )}
-          <h1 id="profiles-title">Profiles</h1>
+          <h1
+            id="profiles-title"
+            className="m-0 text-title text-vn-text [@media(max-width:760px)]:text-[24px]"
+          >
+            Profiles
+          </h1>
         </div>
         <Button
-          variant="outline"
+          variant="workspace-outline"
+          className="h-11"
           aria-label="New profile"
           disabled={!ready}
           onClick={createProfile}
@@ -157,12 +163,16 @@ export function People({ profileId }: { profileId?: string }) {
           + New
         </Button>
       </div>
-      <div className="vn-search">
-        <MagnifyingGlassIcon aria-hidden="true" />
+      <div className="flex h-[46px] flex-none items-center gap-3 rounded-[4px] border border-vn-stroke px-3.5 [@media(max-width:1100px)]:group-data-[detail=true]/profiles:hidden">
+        <MagnifyingGlassIcon
+          className="size-4 flex-none fill-none stroke-vn-muted stroke-[1.2]"
+          aria-hidden="true"
+        />
         <label className="sr-only" htmlFor="profile-search">
           Search profiles
         </label>
         <Input
+          variant="search"
           id="profile-search"
           type="search"
           maxLength={200}
@@ -171,13 +181,16 @@ export function People({ profileId }: { profileId?: string }) {
           onChange={(event) => setSearch(event.target.value)}
         />
       </div>
-      <div className="vn-profile-browser">
-        <aside className="vn-profile-list" aria-label="Profiles">
+      <div className="grid grid-cols-[minmax(250px,340px)_minmax(0,1fr)] gap-12 [@media(max-width:1100px)]:grid-cols-[minmax(0,1fr)] [@media(max-width:760px)]:flex [@media(max-width:760px)]:flex-col [@media(max-width:760px)]:gap-[18px]">
+        <aside
+          className="flex flex-col items-stretch [@media(max-width:1100px)]:group-data-[detail=true]/profiles:hidden"
+          aria-label="Profiles"
+        >
           {loading && filteredPeople.length === 0 && (
-            <div className="vn-profile-loading" role="status" aria-label="Loading profiles">
-              <Skeleton />
-              <Skeleton />
-              <Skeleton />
+            <div className="flex flex-col" role="status" aria-label="Loading profiles">
+              <Skeleton variant="row" className="h-[71px]" />
+              <Skeleton variant="row" className="h-[71px]" />
+              <Skeleton variant="row" className="h-[71px]" />
             </div>
           )}
           {error && (
@@ -191,7 +204,7 @@ export function People({ profileId }: { profileId?: string }) {
             </Alert>
           )}
           {!loading && filteredPeople.length === 0 && !error && (
-            <Empty className="vn-profile-empty">
+            <Empty className="min-h-[180px] border-0 px-2 py-6 md:px-2 md:py-6">
               <EmptyHeader>
                 <EmptyTitle>
                   {normalizedSearch ? "No matching profiles" : "No profiles yet"}
@@ -206,10 +219,16 @@ export function People({ profileId }: { profileId?: string }) {
             <Link
               key={entry.id}
               href={`/profiles/${encodeURIComponent(entry.id)}`}
-              className={cn("vn-profile-row", entry.id === currentId && "is-active")}
+              className={cn(
+                "flex min-h-[71px] items-center gap-3 rounded-[3px] p-3 hover:bg-vn-hover",
+                entry.id === currentId && "bg-vn-hover",
+              )}
               aria-current={entry.id === currentId ? "page" : undefined}
             >
-              <span className="vn-avatar" aria-hidden="true">
+              <span
+                className="flex size-8 flex-none items-center justify-center rounded-full border border-vn-stroke-strong text-[11px] text-vn-secondary"
+                aria-hidden="true"
+              >
                 {entry.displayName
                   .trim()
                   .split(/\s+/)
@@ -218,14 +237,19 @@ export function People({ profileId }: { profileId?: string }) {
                   .slice(0, 2)
                   .toUpperCase() || "?"}
               </span>
-              <span className="vn-profile-label">
-                <span>
+              <span className="flex min-w-0 flex-1 flex-col gap-1 text-vn-text">
+                <span className="truncate">
                   {entry.displayName || "Untitled profile"}
                   {edits[`person:${entry.id}`]?.dirty ? " ·" : ""}
                 </span>
-                <small>{entry.descriptionPreview || "Profile"}</small>
+                <small className="truncate text-[11px] text-vn-muted">
+                  {entry.descriptionPreview || "Profile"}
+                </small>
               </span>
-              <span className="vn-trailing" aria-hidden="true">
+              <span
+                className="w-5 flex-none text-right text-[16px] text-vn-muted"
+                aria-hidden="true"
+              >
                 ›
               </span>
             </Link>
@@ -241,21 +265,26 @@ export function People({ profileId }: { profileId?: string }) {
             </Button>
           )}
         </aside>
-        <div className="vn-profile-detail">
+        <div className="flex min-w-0 flex-col gap-6 pt-3 [@media(max-width:1100px)]:group-data-[detail=false]/profiles:hidden [@media(max-width:760px)]:border-t [@media(max-width:760px)]:border-vn-stroke [@media(max-width:760px)]:pt-[18px]">
           {person ? (
             <>
-              <div className="vn-profile-detail-heading">
+              <div className="flex items-start justify-between gap-5">
                 <div>
-                  <h2>{person.displayName || "Untitled profile"}</h2>
-                  <p>{person.description || "Speaker profile"}</p>
+                  <h2 className="mb-1.5 mt-0 text-[22px] font-normal text-vn-text">
+                    {person.displayName || "Untitled profile"}
+                  </h2>
+                  <p className="m-0 text-vn-muted">{person.description || "Speaker profile"}</p>
                 </div>
-                <span className="vn-muted">{edit?.dirty ? "Unsaved" : ""}</span>
+                <span className="text-vn-muted">{edit?.dirty ? "Unsaved" : ""}</span>
               </div>
-              <fieldset className="vn-form-fields" disabled={locked}>
+              <fieldset className="flex min-w-0 flex-col gap-2.5 border-0 p-0" disabled={locked}>
                 <FieldGroup>
                   <Field>
-                    <FieldLabel htmlFor="profile-name">Display name</FieldLabel>
+                    <FieldLabel variant="workspace" className="mt-2" htmlFor="profile-name">
+                      Display name
+                    </FieldLabel>
                     <Input
+                      variant="workspace"
                       id="profile-name"
                       name="displayName"
                       required
@@ -267,8 +296,11 @@ export function People({ profileId }: { profileId?: string }) {
                     />
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="profile-description">Description</FieldLabel>
+                    <FieldLabel variant="workspace" className="mt-2" htmlFor="profile-description">
+                      Description
+                    </FieldLabel>
                     <Textarea
+                      variant="workspace"
                       id="profile-description"
                       name="description"
                       rows={5}
@@ -281,7 +313,7 @@ export function People({ profileId }: { profileId?: string }) {
                   </Field>
                 </FieldGroup>
               </fieldset>
-              <p className="vn-muted">
+              <p className="text-vn-muted">
                 Renaming keeps this profile’s identity across every assigned recording.
               </p>
               <SaveControls entityType="person" entityId={person.id} />
@@ -289,7 +321,7 @@ export function People({ profileId }: { profileId?: string }) {
             </>
           ) : profileId ? (
             unavailable[`person:${profileId}`] ? (
-              <Empty className="vn-unavailable-profile">
+              <Empty className="min-h-[180px] border-0 px-2 py-6 md:px-2 md:py-6">
                 <EmptyHeader>
                   <EmptyTitle>
                     {unavailable[`person:${profileId}`] === "forbidden"
@@ -326,7 +358,7 @@ export function People({ profileId }: { profileId?: string }) {
                 </AlertDescription>
               </Alert>
             ) : (
-              <div className="vn-profile-prompt" role="status">
+              <div className="flex min-h-[180px] items-center text-vn-muted" role="status">
                 <Skeleton className="h-16 w-full" />
                 <p>Loading profile…</p>
                 <Button asChild variant="ghost">
@@ -335,7 +367,7 @@ export function People({ profileId }: { profileId?: string }) {
               </div>
             )
           ) : (
-            <div className="vn-profile-prompt">
+            <div className="flex min-h-[180px] items-center text-vn-muted">
               <p>Select a profile to view and edit its details.</p>
             </div>
           )}

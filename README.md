@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="public/logo.svg" alt="VoidNote Logo" width="100">
+  <img src="public/assets/brand/favicon.svg" alt="VoidNote Logo" width="64">
   <h1>VoidNote</h1>
   <p><em>Voice-first conversation capture.</em></p>
 

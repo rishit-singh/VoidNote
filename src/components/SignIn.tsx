@@ -5,8 +5,9 @@ import { useId, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
-export function SignIn({ message }: { message?: string }) {
+export function SignIn({ message, className }: { message?: string; className?: string }) {
   const id = useId();
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -45,26 +46,34 @@ export function SignIn({ message }: { message?: string }) {
   }
 
   return (
-    <section aria-labelledby={`${id}-title`} className="vn-signin">
-      <h1 id={`${id}-title`} className="text-xl font-semibold">
+    <section
+      aria-labelledby={`${id}-title`}
+      className={cn(
+        "flex w-[min(100%,440px)] flex-col gap-[18px] p-8 [@media(max-width:760px)]:px-5 [@media(max-width:760px)]:py-7",
+        className,
+      )}
+    >
+      <h1 id={`${id}-title`} className="m-0 text-[22px] font-medium leading-7 text-vn-text">
         Sign in to VoidNote
       </h1>
-      <p id={`${id}-help`} className="text-sm text-muted-foreground">
+      <p id={`${id}-help`} className="m-0 text-sm leading-[1.7] text-vn-muted">
         Get an email link to securely save your notes and profiles. Open the link in this browser.
       </p>
       {message && (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="m-0 text-sm leading-[1.7] text-vn-muted">
           {message}
         </p>
       )}
       <form
         onSubmit={(event) => void submit(event)}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-3.5"
         aria-busy={state === "sending"}
       >
         <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor={`${id}-email`}>Email address</FieldLabel>
+          <Field className="gap-2">
+            <FieldLabel variant="signin" htmlFor={`${id}-email`}>
+              Email address
+            </FieldLabel>
             <Input
               id={`${id}-email`}
               name="email"
@@ -81,11 +90,11 @@ export function SignIn({ message }: { message?: string }) {
               }}
               disabled={state === "sending"}
               aria-describedby={`${id}-help ${id}-status`}
-              className="vn-input"
+              variant="signin"
             />
           </Field>
         </FieldGroup>
-        <Button type="submit" disabled={state === "sending"} className="vn-signin-submit">
+        <Button type="submit" disabled={state === "sending"}>
           {state === "sending"
             ? "Sending…"
             : state === "sent"

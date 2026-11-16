@@ -1,4 +1,3 @@
-import "./App.css";
 import WorkspaceShell from "./components/workspace/WorkspaceShell";
 import { HomeView } from "./components/workspace/HomeView";
 import { ThemeProvider } from "./components/theme-provider";

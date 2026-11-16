@@ -1,28 +1,20 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono } from "next/font/google";
 
 import "@/app/globals.css";
-import "@/App.css";
+import { assetUrls } from "@/assets";
+import { mono, monoItalic } from "@/assets/fonts";
 import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/components/query-provider";
 
-const mono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-  variable: "--font-ibm-plex-mono",
-});
-
-const monoItalic = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: "400",
-  style: "italic",
-  display: "swap",
-  variable: "--font-ibm-plex-mono-italic",
-});
-
 export const metadata: Metadata = {
   title: "VoidNote",
+  icons: {
+    icon: [
+      { url: assetUrls.favicon, type: "image/svg+xml", sizes: "any" },
+      { url: assetUrls.faviconIco, type: "image/x-icon", sizes: "16x16 32x32 48x48" },
+    ],
+    apple: { url: assetUrls.appleTouchIcon, sizes: "180x180", type: "image/png" },
+  },
   description:
     "Transcribe recordings, connect speakers to profiles, and revisit their words across conversations. Explore VoidNote’s plans for source-linked context and conversation preparation.",
 };

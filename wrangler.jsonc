@@ -65,7 +65,7 @@
         },
       ],
       "vars": {
-        "APP_URL": "https://voidnote-production.rsrishitsingh.workers.dev",
+        "APP_URL": "https://voidnote.app",
         "SUPABASE_URL": "https://rbacdtsvrogopijybsep.supabase.co",
       },
       "secrets": {

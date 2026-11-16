@@ -147,3 +147,75 @@ test("landing keeps session errors visible and allows retry", async ({ page, wor
   await expect(retry).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Get started", exact: true })).toBeVisible();
 });
+
+for (const provider of ["google"] as const) {
+  const label = "Google";
+
+  test(`landing starts ${label} sign-in and locks competing methods during redirect`, async ({
+    page,
+    workspace,
+  }) => {
+    workspace.session = null;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const requests: unknown[] = [];
+    const authorizeUrl = `https://auth.example.test/auth/v1/authorize?provider=${provider}`;
+    await page.route("https://auth.example.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: "Provider handoff" }),
+    );
+    await page.route("**/api/auth/sign-in", async (route) => {
+      requests.push(route.request().postDataJSON());
+      await held;
+      await route.fulfill({ json: { url: authorizeUrl } });
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Get started", exact: true }).click();
+    await page.getByRole("button", { name: `Continue with ${label}` }).click();
+    await expect(page.getByRole("button", { name: `Connecting to ${label}…` })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Send sign-in link", exact: true }),
+    ).toBeDisabled();
+    await expect(page.getByLabel("Email address")).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Continue with GitHub" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Close", exact: true })).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toBeVisible();
+    release();
+    await expect(page).toHaveURL(authorizeUrl);
+    expect(requests).toEqual([{ provider }]);
+
+    await page.goBack();
+    if (!(await page.getByRole("dialog").isVisible())) {
+      await page.getByRole("button", { name: "Get started", exact: true }).click();
+    }
+    await expect(page.getByRole("button", { name: `Continue with ${label}` })).toBeEnabled();
+    await page.getByRole("button", { name: `Continue with ${label}` }).click();
+    await expect(page).toHaveURL(authorizeUrl);
+    expect(requests).toEqual([{ provider }, { provider }]);
+  });
+}
+
+test("provider initiation failure restores sign-in methods and preserves the email draft", async ({
+  page,
+  workspace,
+}) => {
+  workspace.session = null;
+  await page.route("**/api/auth/sign-in", (route) =>
+    route.fulfill({ status: 503, json: { error: "auth_unavailable" } }),
+  );
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Get started", exact: true }).click();
+  await page.getByLabel("Email address").fill("listener@example.test");
+  await page.getByRole("button", { name: "Continue with Google" }).click();
+  await expect(page.getByRole("alert")).toContainText("Unable to start sign-in");
+  await expect(page.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Continue with GitHub" })).toHaveCount(0);
+  await expect(page.getByLabel("Email address")).toHaveValue("listener@example.test");
+  await expect(page.getByRole("button", { name: "Send sign-in link", exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});

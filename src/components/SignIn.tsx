@@ -1,29 +1,97 @@
 "use client";
 
-import { useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-export function SignIn({ message, className }: { message?: string; className?: string }) {
+export function SignIn({
+  message,
+  className,
+  onPendingChange,
+}: {
+  message?: string;
+  className?: string;
+  onPendingChange?: (pending: boolean) => void;
+}) {
   const id = useId();
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [error, setError] = useState("");
+  const [provider, setProvider] = useState<"google" | "github" | null>(null);
+  const busy = state === "sending" || provider !== null;
+  const requestController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    onPendingChange?.(busy);
+  }, [busy, onPendingChange]);
+
+  useEffect(() => {
+    function restore(event: PageTransitionEvent) {
+      if (event.persisted) setProvider(null);
+    }
+
+    window.addEventListener("pageshow", restore);
+    return () => {
+      window.removeEventListener("pageshow", restore);
+      requestController.current?.abort();
+      onPendingChange?.(false);
+    };
+  }, [onPendingChange]);
+
+  async function signInWithProvider(selected: "google" | "github") {
+    if (busy) return;
+    setProvider(selected);
+    setState("idle");
+    setError("");
+    const controller = new AbortController();
+    requestController.current = controller;
+
+    try {
+      const response = await fetch("/api/auth/sign-in", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: selected }),
+        signal: controller.signal,
+      });
+      const body: unknown = await response.json();
+
+      if (
+        !response.ok ||
+        !body ||
+        typeof body !== "object" ||
+        !("url" in body) ||
+        typeof body.url !== "string"
+      ) {
+        throw new Error("Unable to start sign-in");
+      }
+
+      if (!controller.signal.aborted) window.location.assign(body.url);
+    } catch {
+      if (controller.signal.aborted) return;
+      setProvider(null);
+      setError("Unable to start sign-in. Check your connection and try again.");
+      setState("error");
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (state === "sending") return;
+    if (busy) return;
     setState("sending");
     setError("");
+    const controller = new AbortController();
+    requestController.current = controller;
     try {
       const response = await fetch("/api/auth/sign-in", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
+        signal: controller.signal,
       });
       if (!response.ok) {
         const body: unknown = await response.json().catch(() => null);
@@ -40,6 +108,7 @@ export function SignIn({ message, className }: { message?: string; className?: s
       }
       setState("sent");
     } catch {
+      if (controller.signal.aborted) return;
       setError("Unable to connect. Check your connection and try again.");
       setState("error");
     }
@@ -57,17 +126,33 @@ export function SignIn({ message, className }: { message?: string; className?: s
         Sign in to VoidNote
       </h1>
       <p id={`${id}-help`} className="m-0 text-sm leading-[1.7] text-vn-muted">
-        Get an email link to securely save your notes and profiles. Open the link in this browser.
+        Sign in to securely save your notes and profiles. If you use an email link, open it in this
+        browser.
       </p>
       {message && (
         <p role="status" className="m-0 text-sm leading-[1.7] text-vn-muted">
           {message}
         </p>
       )}
+      <div
+        className="flex flex-col gap-2"
+        aria-label="Provider sign-in"
+        aria-busy={provider !== null}
+      >
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void signInWithProvider("google")}
+        >
+          {provider === "google" ? "Connecting to Google…" : "Continue with Google"}
+        </Button>
+      </div>
+      <p className="text-sm text-muted-foreground">Or use an email link</p>
       <form
         onSubmit={(event) => void submit(event)}
         className="flex flex-col gap-3.5"
-        aria-busy={state === "sending"}
+        aria-busy={busy}
       >
         <FieldGroup>
           <Field className="gap-2">
@@ -88,13 +173,13 @@ export function SignIn({ message, className }: { message?: string; className?: s
                 setEmail(event.target.value);
                 if (state !== "sending") setState("idle");
               }}
-              disabled={state === "sending"}
+              disabled={busy}
               aria-describedby={`${id}-help ${id}-status`}
               variant="signin"
             />
           </Field>
         </FieldGroup>
-        <Button type="submit" disabled={state === "sending"}>
+        <Button type="submit" disabled={busy}>
           {state === "sending"
             ? "Sending…"
             : state === "sent"

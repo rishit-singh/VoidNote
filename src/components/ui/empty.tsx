@@ -2,12 +2,18 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
-function Empty({ className, ...props }: React.ComponentProps<"div">) {
+function Empty({
+  className,
+  variant = "default",
+  ...props
+}: React.ComponentProps<"div"> & { variant?: "default" | "notes" }) {
   return (
     <div
       data-slot="empty"
       className={cn(
         "flex min-w-0 flex-1 flex-col items-center justify-center gap-6 text-balance rounded-lg border-dashed p-6 text-center md:p-12",
+        variant === "notes" &&
+          "min-h-[300px] border-0 px-4 py-11 md:px-4 md:py-11 [&_[data-slot=empty-title]]:text-[17px] [&_[data-slot=empty-title]]:font-medium [&_[data-slot=empty-title]]:text-vn-text [&_[data-slot=empty-description]]:text-[13px] [&_[data-slot=empty-description]]:text-vn-muted",
         className,
       )}
       {...props}

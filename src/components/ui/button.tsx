@@ -15,6 +15,12 @@ const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground data-[state=open]:bg-accent/50",
         link: "text-primary underline-offset-4 hover:underline",
+        "workspace-outline":
+          "rounded-[3px] border border-vn-stroke-strong bg-transparent text-vn-text [font:inherit] hover:bg-transparent hover:text-vn-text",
+        "sidebar-outline":
+          "rounded-[3px] border border-vn-stroke bg-transparent text-vn-text [font:inherit] hover:bg-transparent hover:text-vn-text",
+        "workspace-ghost":
+          "text-vn-muted [font:inherit] hover:bg-accent hover:text-vn-muted data-[state=open]:bg-accent/50",
       },
       size: {
         default: "h-9 px-4 py-2",

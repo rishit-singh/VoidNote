@@ -498,8 +498,25 @@ test("correction intent survives navigation while a delayed acknowledgement cann
   try {
     await page.getByRole("button", { name: "Select Alex Rivera" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect.poll(() => f.state.commands.length).toBe(1);
     await page.getByRole("link", { name: other.title, exact: true }).click();
+    // A completed click does not mean Next's navigation has committed. Hold the
+    // response until the old editor unmounts, otherwise it may legitimately
+    // acknowledge the command and clear recovery before we leave the note.
+    await expect(page).toHaveURL(new RegExp(`/notes/${other.id}$`));
+    await expect(page.getByLabel("Title", { exact: true })).toHaveValue(other.title);
+    await expect(page.getByRole("region", { name: "Corrected transcript" })).toHaveCount(0);
+    const acknowledgement = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname.startsWith(
+          `/api/workspaces/${workspaceId}/notes/${f.note.id}/`,
+        ) &&
+        new URL(response.url()).pathname.endsWith("/corrections"),
+    );
     release();
+    expect((await acknowledgement).ok()).toBe(true);
+    await expect(page.getByLabel("Title", { exact: true })).toHaveValue(other.title);
     await expect(page.getByRole("region", { name: "Corrected transcript" })).toHaveCount(0);
     await page.getByRole("link", { name: f.note.title, exact: true }).click();
     await page

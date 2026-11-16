@@ -1,7 +1,21 @@
 import { cn } from "@/lib/utils";
 
-function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("animate-pulse rounded-md bg-primary/10", className)} {...props} />;
+function Skeleton({
+  className,
+  variant = "default",
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & { variant?: "default" | "row" }) {
+  return (
+    <div
+      className={cn(
+        "animate-pulse rounded-md bg-primary/10",
+        variant === "row" &&
+          "rounded-none border-b border-vn-stroke bg-gradient-to-r from-vn-surface via-vn-hover to-vn-surface",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 export { Skeleton };

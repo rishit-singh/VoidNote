@@ -9,8 +9,9 @@
     "bun": ">=1.4.0"
   },
   "scripts": {
+    "assets:generate": "bun scripts/generate-assets.ts",
     "dev": "next dev",
-    "build": "next build",
+    "build": "bun run assets:generate && next build",
     "build:worker": "opennextjs-cloudflare build --env production && bun scripts/prepare-worker-env.ts",
     "preview:worker": "opennextjs-cloudflare preview",
     "deploy:check": "wrangler deploy --env production --dry-run",
@@ -99,6 +100,7 @@
     "miniflare": "5.20261113.0-beta",
     "postcss": "^8.4.47",
     "prettier": "3.10.1",
+    "sharp": "0.35.5",
     "tailwindcss": "^3.4.13",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.2",

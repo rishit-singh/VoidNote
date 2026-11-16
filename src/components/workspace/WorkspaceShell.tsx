@@ -118,14 +118,17 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
 
   if (!session && (status === "idle" || status === "loading")) {
     return (
-      <main className="vn-loading" aria-label="VoidNote workspace">
+      <main
+        className="flex min-h-dvh items-center justify-center gap-5 bg-vn-page text-vn-muted"
+        aria-label="VoidNote workspace"
+      >
         <Skeleton className="h-8 w-56" role="status" aria-label="Opening your workspace" />
       </main>
     );
   }
   if (status === "signedOut") {
     return (
-      <main className="vn-auth">
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-5 bg-vn-page p-6 text-vn-muted">
         <SignIn {...(error ? { message: error } : {})} />
         <Button variant="outline" onClick={() => void refreshSession()}>
           Check sign-in
@@ -135,9 +138,11 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   }
   if (!session && (status === "setup" || status === "error")) {
     return (
-      <main className="vn-loading">
-        <section className="vn-message">
-          <h1>{status === "setup" ? "Workspace setup required" : "Unable to load workspace"}</h1>
+      <main className="flex min-h-dvh items-center justify-center gap-5 bg-vn-page text-vn-muted">
+        <section className="flex max-w-[480px] flex-col gap-4 p-6 [&_p]:m-0">
+          <h1 className="m-0 text-[22px] font-medium text-vn-text">
+            {status === "setup" ? "Workspace setup required" : "Unable to load workspace"}
+          </h1>
           <Alert variant="destructive">
             <AlertDescription>{error ?? "Please try again shortly."}</AlertDescription>
           </Alert>
@@ -157,45 +162,57 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
         if (!open) setSignOutError(null);
       }}
     >
-      <div className="vn-app">
+      <div className="flex h-dvh min-h-dvh w-full overflow-hidden bg-vn-page font-mono text-body text-vn-text [&_:is(a,button,input,textarea):focus-visible]:outline [&_:is(a,button,input,textarea):focus-visible]:outline-2 [&_:is(a,button,input,textarea):focus-visible]:outline-offset-[3px] [&_:is(a,button,input,textarea):focus-visible]:outline-vn-secondary motion-reduce:[&_*]:!scroll-auto motion-reduce:[&_*]:![transition-duration:0.01ms] motion-reduce:[&_*::before]:!scroll-auto motion-reduce:[&_*::before]:![transition-duration:0.01ms] motion-reduce:[&_*::after]:!scroll-auto motion-reduce:[&_*::after]:![transition-duration:0.01ms] [@media(max-width:760px)]:flex-col [@media(max-width:760px)]:overflow-auto">
         <RecordingController noteId={noteId ?? undefined} />
-        <aside className="vn-sidebar" aria-label="Primary navigation">
-          <Link href="/" className="vn-brand" aria-label="VoidNote home">
+        <aside
+          className="flex min-h-dvh flex-[0_0_224px] flex-col gap-6 border-r border-vn-divider bg-vn-sidebar px-4 pb-5 pt-7 [@media(max-width:760px)]:hidden"
+          aria-label="Primary navigation"
+        >
+          <Link
+            href="/"
+            className="flex min-h-8 items-center px-3.5 text-[18px] font-medium tracking-[-0.04em] text-vn-text"
+            aria-label="VoidNote home"
+          >
             voidnote
           </Link>
           {pathname !== "/" && (
             <Button
-              className="vn-new-note"
-              variant="outline"
+              className="flex h-[38px] justify-start gap-2.5 px-3.5 py-0"
+              variant="sidebar-outline"
               aria-label="New note"
               disabled={status !== "ready"}
               onClick={startNewNote}
             >
-              <PlusIcon aria-hidden="true" />
+              <PlusIcon data-icon="inline-start" aria-hidden="true" />
               New note
             </Button>
           )}
-          <nav className="vn-side-nav" aria-label="Workspace">
+          <nav className="flex flex-col gap-1" aria-label="Workspace">
             {navigation.map(({ href, label, icon: Icon }) => (
               <Link
                 key={href}
                 href={href}
-                className={cn("vn-nav-link", selectedSection === href && "is-active")}
+                className={cn(
+                  "flex h-[38px] items-center gap-3 rounded-[3px] px-3.5 text-label text-vn-muted transition-[background-color,color] duration-150 [transition-timing-function:ease] hover:bg-vn-hover hover:text-vn-text",
+                  selectedSection === href && "bg-vn-hover text-vn-text",
+                )}
                 aria-current={selectedSection === href ? "page" : undefined}
               >
-                <Icon aria-hidden="true" />
+                <Icon className="size-4 flex-none stroke-[1.5]" aria-hidden="true" />
                 {label}
               </Link>
             ))}
           </nav>
           {pathname !== "/" && (
-            <div className="vn-recent">
-              <p className="vn-section-label">Notes</p>
+            <div className="flex flex-col gap-0.5">
+              <p className="mb-1.5 mt-0 px-3.5 pb-2 text-meta font-medium uppercase tracking-wider text-vn-muted">
+                Notes
+              </p>
               {recentNotes.map((item) => (
                 <Link
                   key={item.id}
                   href={`/notes/${encodeURIComponent(item.id)}`}
-                  className={cn("vn-recent-link", item.id === noteId && "is-active")}
+                  className="block truncate rounded-[3px] px-3.5 py-2.5 text-meta text-vn-secondary hover:bg-vn-hover hover:text-vn-text"
                 >
                   {item.title || "Untitled note"}
                   {edits[`note:${item.id}`]?.dirty && <span aria-label="Unsaved changes"> ·</span>}
@@ -203,20 +220,20 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
               ))}
             </div>
           )}
-          <div className="vn-sidebar-bottom">
-            <span className="vn-user-email" title={session?.user.email ?? ""}>
+          <div className="mt-auto flex flex-col gap-2 border-t border-vn-stroke px-2 pt-3.5">
+            <span className="truncate text-[11px] text-vn-muted" title={session?.user.email ?? ""}>
               {session?.user.email}
             </span>
             <AlertDialogTrigger asChild>
-              <Button className="vn-signout" variant="ghost">
-                <ExitIcon aria-hidden="true" />
+              <Button className="justify-start gap-2.5 px-1.5 py-0" variant="workspace-ghost">
+                <ExitIcon data-icon="inline-start" aria-hidden="true" />
                 Sign out
               </Button>
             </AlertDialogTrigger>
           </div>
         </aside>
         <main
-          className="vn-main"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto [@media(max-width:760px)]:pb-[calc(62px+env(safe-area-inset-bottom))]"
           id="main-content"
           aria-label={
             pathname.startsWith("/notes/")
@@ -229,7 +246,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
           }
         >
           {recoveryError && (
-            <Alert variant="destructive" className="vn-inline-notice">
+            <Alert variant="notice">
               <AlertDescription>
                 {recoveryError}
                 {recoveryHydration === "error" && (
@@ -241,17 +258,17 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
             </Alert>
           )}
           {error && (
-            <Alert variant="destructive" className="vn-inline-notice">
+            <Alert variant="notice">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
           {recoveryHydration === "loading" && (
-            <p role="status" className="vn-inline-status">
+            <p role="status" className="m-0 px-6 text-vn-muted">
               Recovering saved drafts…
             </p>
           )}
           {!!recoveredDraftCount && (
-            <p className="vn-inline-status" role="status">
+            <p className="m-0 px-6 text-vn-muted" role="status">
               Recovered {recoveredDraftCount} draft{recoveredDraftCount === 1 ? "" : "s"} from this
               device.
             </p>
@@ -259,15 +276,21 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
           {children}
           <RecordingDock {...(noteId ? { noteId } : {})} />
         </main>
-        <nav className="vn-mobile-nav" aria-label="Mobile workspace navigation">
+        <nav
+          className="fixed inset-x-0 bottom-0 z-20 hidden min-h-[calc(56px+env(safe-area-inset-bottom))] items-center justify-around border-t border-vn-stroke bg-vn-sidebar px-3.5 pb-[env(safe-area-inset-bottom)] pt-1 [@media(max-width:760px)]:flex"
+          aria-label="Mobile workspace navigation"
+        >
           {navigation.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
-              className={cn(selectedSection === href && "is-active")}
+              className={cn(
+                "flex min-h-11 min-w-16 flex-col items-center justify-center gap-0.5 text-[10px] text-vn-muted",
+                selectedSection === href && "text-vn-text",
+              )}
               aria-current={selectedSection === href ? "page" : undefined}
             >
-              <Icon aria-hidden="true" />
+              <Icon className="size-[17px]" aria-hidden="true" />
               <span>{label}</span>
             </Link>
           ))}

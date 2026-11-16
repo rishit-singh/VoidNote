@@ -1,4 +1,5 @@
 import animate from "tailwindcss-animate";
+import { palette } from "./src/design/tokens.ts";
 
 /** @type {import('tailwindcss').Config} */
 const config = {
@@ -17,6 +18,7 @@ const config = {
       spacing: { section: "2rem" },
       fontFamily: {
         mono: ["var(--font-ibm-plex-mono)", "ui-monospace", "monospace"],
+        "mono-italic": ["var(--font-ibm-plex-mono-italic)", "ui-monospace", "monospace"],
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -24,6 +26,7 @@ const config = {
         sm: "calc(var(--radius) - 4px)",
       },
       colors: {
+        vn: palette,
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Download, Mic, Pause, Play, Square } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import { LiveWaveform } from "@/assets";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -38,29 +39,7 @@ const extension = (mimeType: string) =>
 function Waveform() {
   const levels = useCaptureStore((state) => state.waveformLevels);
   if (!levels.length) return null;
-  return (
-    <svg
-      width="96"
-      height="26"
-      viewBox="0 0 96 26"
-      role="img"
-      aria-label="Live microphone waveform"
-      className="hidden shrink-0 text-muted-foreground sm:block"
-    >
-      {levels.map((level, index) => (
-        <line
-          key={index}
-          x1={index * 4 + 2}
-          x2={index * 4 + 2}
-          y1={13 - Math.max(1, level * 12)}
-          y2={13 + Math.max(1, level * 12)}
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-      ))}
-    </svg>
-  );
+  return <LiveWaveform levels={levels} />;
 }
 function CaptureReadout() {
   const elapsed = useCaptureStore((state) => state.elapsedMs);
@@ -204,7 +183,10 @@ export function RecordingDock({ noteId }: { noteId?: string | undefined }) {
   });
   if (!noteId && !active) return null;
   return (
-    <section aria-label="Audio recorder" className="vn-recording-dock flex w-full flex-col gap-3">
+    <section
+      aria-label="Audio recorder"
+      className="sticky bottom-0 z-[2] flex w-full flex-col gap-3 bg-vn-page px-[clamp(24px,5.5vw,80px)] pb-[18px] pt-3 [@media(max-width:760px)]:px-4 [@media(max-width:760px)]:pb-3 [@media(max-width:760px)]:pt-2"
+    >
       <div className="flex min-h-[80px] w-full flex-wrap items-center gap-3 rounded-md border border-border bg-card px-4 py-3 sm:min-h-[68px] sm:gap-5">
         <div className="flex shrink-0 items-center gap-2">
           {capture.status === "recording" || capture.status === "paused" ? (

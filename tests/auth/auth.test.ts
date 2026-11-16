@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { afterEach, before, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -12,7 +13,7 @@ type AuthModule = typeof import("../../src/auth/server.ts") & {
   callback: typeof import("../../src/app/auth/callback/route.ts").GET;
 };
 
-const appOrigin = "https://voidnote.test";
+const appOrigin = "https://voidnote.app";
 const supabaseOrigin = "https://auth.example.test";
 const user = {
   id: "d0512bb8-a3a6-4114-a12e-113c17035db6",
@@ -271,6 +272,189 @@ void describe("Supabase SSR auth boundary", { concurrency: false }, () => {
     assert.equal(failed.headers.get("location"), `${appOrigin}/auth/error`);
     assert.equal(await failed.text(), "");
     assert.equal(requests.length, 2);
+  });
+
+  for (const provider of ["google", "github"] as const) {
+    void it(`starts ${provider} OAuth and exchanges the code with its persisted PKCE verifier`, async () => {
+      const request = post("/api/auth/sign-in", { provider });
+      request.headers.set("x-forwarded-host", "evil.test");
+      request.headers.set("x-forwarded-proto", "http");
+      const started = await auth.signIn(request);
+      assert.equal(started.status, 200);
+      assertPrivate(started);
+      const payload = (await started.json()) as { url: string };
+      assert.deepEqual(Object.keys(payload), ["url"]);
+      const authorize = new URL(payload.url);
+      assert.equal(authorize.origin, supabaseOrigin);
+      assert.equal(authorize.pathname, "/auth/v1/authorize");
+      assert.equal(authorize.searchParams.get("provider"), provider);
+      assert.equal(authorize.searchParams.get("redirect_to"), `${appOrigin}/auth/callback`);
+      assert.equal(authorize.searchParams.get("code_challenge_method"), "s256");
+      const challenge = authorize.searchParams.get("code_challenge");
+      assert.match(challenge ?? "", /^[A-Za-z0-9_-]{43}$/);
+      assert.equal(requests.length, 0, "the SDK constructs the authorization URL locally");
+
+      const cookie = jar.get("voidnote-auth-code-verifier");
+      assert.ok(cookie, "the verifier must be persisted before returning the authorization URL");
+      assert.ok(cookie.startsWith("base64-"));
+      const verifier = JSON.parse(Buffer.from(cookie.slice(7), "base64url").toString()) as string;
+      assert.equal(typeof verifier, "string");
+      assert.equal(createHash("sha256").update(verifier).digest("base64url"), challenge);
+      assert.ok(
+        writes.some(
+          ({ name, value, options }) =>
+            name === "voidnote-auth-code-verifier" &&
+            value === cookie &&
+            options.httpOnly &&
+            options.secure &&
+            options.sameSite === "lax" &&
+            options.path === "/",
+        ),
+      );
+      assert.ok(!payload.url.includes(verifier), "only the challenge may leave the app cookie");
+
+      respond = () => Response.json(session());
+      const callback = await auth.callback(
+        new Request(
+          "https://poisoned-host.test/auth/callback?code=oauth-code&next=https://evil.test&redirectTo=//evil.test",
+        ),
+      );
+      assert.equal(callback.status, 303);
+      assert.equal(callback.headers.get("location"), `${appOrigin}/`);
+      assertPrivate(callback);
+      assert.equal(requests.length, 1);
+      const exchange = requests[0];
+      assert.ok(exchange);
+      assert.equal(exchange.method, "POST");
+      const exchangeUrl = new URL(exchange.url);
+      assert.equal(exchangeUrl.pathname, "/auth/v1/token");
+      assert.equal(exchangeUrl.searchParams.get("grant_type"), "pkce");
+      const body = (await exchange.json()) as Record<string, unknown>;
+      assert.equal(body.auth_code, "oauth-code");
+      assert.equal(body.code_verifier, verifier);
+      assert.ok(jar.has("voidnote-auth"));
+      assert.ok(!jar.has("voidnote-auth-code-verifier"));
+      assert.ok(
+        writes.every(
+          ({ options }) => options.httpOnly && options.secure && options.sameSite === "lax",
+        ),
+      );
+    });
+  }
+
+  void it("rejects unsupported or ambiguous OAuth bodies before writing cookies", async () => {
+    for (const body of [
+      { provider: "apple" },
+      { provider: "facebook" },
+      { provider: "Google" },
+      { provider: null },
+      { provider: "google", email: user.email },
+      { provider: "github", redirectTo: "https://evil.test" },
+      { provider: "google", redirect_to: "https://evil.test" },
+      { provider: "github", next: "//evil.test" },
+      { provider: "google", options: { redirectTo: "https://evil.test" } },
+      {},
+      ["google"],
+    ]) {
+      const response = await auth.signIn(post("/api/auth/sign-in", body));
+      assert.equal(response.status, 400, JSON.stringify(body));
+      assertPrivate(response);
+      assert.equal(((await response.json()) as { error: string }).error, "invalid_request");
+      assert.equal(writes.length, 0);
+      assert.equal(requests.length, 0);
+    }
+  });
+
+  void it("rejects OAuth requests without a trusted origin or bounded JSON before writing cookies", async () => {
+    for (const origin of ["https://evil.test", "null", null]) {
+      const response = await auth.signIn(post("/api/auth/sign-in", { provider: "google" }, origin));
+      assert.equal(response.status, 403);
+      assertPrivate(response);
+    }
+
+    const wrongType = post("/api/auth/sign-in", { provider: "github" });
+    wrongType.headers.set("content-type", "text/plain");
+    const malformed = new Request(`${appOrigin}/api/auth/sign-in`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: appOrigin },
+      body: '{"provider":',
+    });
+    // Valid JSON with excessive whitespace: size rejection must precede schema parsing.
+    const oversized = new Request(`${appOrigin}/api/auth/sign-in`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: appOrigin },
+      body: `${" ".repeat(4096)}{"provider":"google"}`,
+    });
+    assert.equal(oversized.headers.get("content-length"), null);
+    for (const [request, status] of [
+      [wrongType, 400],
+      [malformed, 400],
+      [oversized, 413],
+    ] as const) {
+      const response = await auth.signIn(request);
+      assert.equal(response.status, status);
+      assertPrivate(response);
+    }
+    assert.equal(writes.length, 0);
+    assert.equal(requests.length, 0);
+  });
+
+  void it("sanitizes cancelled or invalid OAuth callbacks without attempting a code exchange", async () => {
+    const started = await auth.signIn(post("/api/auth/sign-in", { provider: "google" }));
+    assert.equal(started.status, 200);
+    const savedCookies = [...jar];
+    const savedWrites = writes.length;
+    for (const query of [
+      "error=access_denied&error_description=private-provider-detail",
+      "code=unused-code&error=access_denied&error_description=private-provider-detail",
+      "code=unused-code&error=",
+      "code=",
+      "",
+      `code=${"x".repeat(2049)}`,
+    ]) {
+      const response = await auth.callback(
+        new Request(
+          `https://poisoned-host.test/auth/callback?${query}&next=https://evil.test&redirectTo=//evil.test`,
+        ),
+      );
+      assert.equal(response.status, 303);
+      assert.equal(response.headers.get("location"), `${appOrigin}/auth/error`);
+      assertPrivate(response);
+      assert.equal(await response.text(), "");
+      assert.equal(requests.length, 0);
+      assert.equal(writes.length, savedWrites);
+      assert.deepEqual([...jar], savedCookies);
+    }
+  });
+
+  void it("sanitizes an OAuth code exchange failure", async () => {
+    await auth.signIn(post("/api/auth/sign-in", { provider: "github" }));
+    respond = () =>
+      Response.json({ message: "private-provider-detail", code: "bad_code" }, { status: 400 });
+    const response = await auth.callback(
+      new Request(`${appOrigin}/auth/callback?code=expired-code&next=https://evil.test`),
+    );
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get("location"), `${appOrigin}/auth/error`);
+    assertPrivate(response);
+    assert.equal(await response.text(), "");
+    assert.equal(requests.length, 1);
+    assert.ok(!jar.has("voidnote-auth"));
+  });
+
+  void it("fails closed if the OAuth verifier cookie cannot be persisted", async (context) => {
+    context.mock.method(cookieStore, "set", () => {
+      throw new Error("private-cookie-write-detail");
+    });
+    const response = await auth.signIn(post("/api/auth/sign-in", { provider: "google" }));
+    assert.equal(response.status, 503);
+    assertPrivate(response);
+    assert.deepEqual(await response.json(), {
+      error: "auth_unavailable",
+      message: "Sign-in is temporarily unavailable. Try again.",
+    });
+    assert.equal(jar.size, 0);
+    assert.equal(requests.length, 0);
   });
 
   void it("clears local auth cookies after upstream sign-out failure but rejects cross-origin sign-out", async () => {

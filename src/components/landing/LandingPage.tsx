@@ -325,6 +325,7 @@ export function LandingPage({
   onCheckSignIn: () => void;
 }) {
   const [signInOpen, setSignInOpen] = useState(false);
+  const [signInPending, setSignInPending] = useState(false);
   const [replay, setReplay] = useState(0);
   const reduceMotion = useSyncExternalStore(
     subscribeReducedMotion,
@@ -430,8 +431,14 @@ export function LandingPage({
           © {new Date().getFullYear()} The Null Node
         </span>
       </footer>
-      <Dialog open={signInOpen} onOpenChange={setSignInOpen}>
+      <Dialog
+        open={signInOpen}
+        onOpenChange={(open) => {
+          if (!signInPending) setSignInOpen(open);
+        }}
+      >
         <DialogContent
+          closeDisabled={signInPending}
           className="max-h-[calc(100dvh-32px)] w-[min(460px,calc(100%-32px))] overflow-y-auto motion-reduce:!animate-none"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
@@ -440,13 +447,14 @@ export function LandingPage({
         >
           <DialogTitle className="sr-only">Sign in to VoidNote</DialogTitle>
           <DialogDescription className="sr-only">
-            Get an email sign-in link to open your workspace.
+            Use Google or an email sign-in link to open your workspace.
           </DialogDescription>
           <SignIn
+            onPendingChange={setSignInPending}
             className="w-full border-0 px-0 pb-0 pt-4 [@media(max-width:760px)]:px-0 [@media(max-width:760px)]:pb-0 [@media(max-width:760px)]:pt-4"
             {...(message ? { message } : {})}
           />
-          <Button variant="ghost" onClick={onCheckSignIn}>
+          <Button variant="ghost" onClick={onCheckSignIn} disabled={signInPending}>
             Already opened your link? Check sign-in
           </Button>
         </DialogContent>

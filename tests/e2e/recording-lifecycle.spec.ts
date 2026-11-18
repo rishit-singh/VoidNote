@@ -155,6 +155,18 @@ test("capture survives navigation, pauses, resumes, drains final audio and reloa
   await page.getByRole("button", { name: "Record", exact: true }).click();
   await expect(page.getByRole("button", { name: "Pause recording", exact: true })).toBeVisible();
   await expect.poll(async () => (await manifests(page))[0]?.chunkCount ?? 0).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  const signOut = page.getByRole("alertdialog", { name: "Recording in progress" });
+  await expect(signOut).toBeVisible();
+  expect(workspace.signOutCount).toBe(0);
+  const chunksBeforeDismiss = (await manifests(page))[0]!.chunkCount;
+  await expect
+    .poll(async () => (await manifests(page))[0]?.chunkCount ?? 0)
+    .toBeGreaterThan(chunksBeforeDismiss);
+  await signOut.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(signOut).toHaveCount(0);
+  expect(workspace.signOutCount).toBe(0);
+  await expect(page.getByRole("button", { name: "Pause recording", exact: true })).toBeVisible();
   await page
     .getByRole("navigation", { name: "Workspace", exact: true })
     .getByRole("link", { name: "Settings", exact: true })

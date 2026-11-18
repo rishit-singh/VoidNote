@@ -31,12 +31,14 @@ export function useNoteEditor(noteId: string) {
         : "missing"
       : undefined;
   const unavailable = detailUnavailable ?? (query.data?.deletedAt ? "missing" : storedUnavailable);
-  const note =
-    !unavailable && query.status === "success" && query.data && !edit?.dirty && !edit?.pending
-      ? createNoteModel({ ...query.data, scopeEpoch: epoch })
-      : unavailable
-        ? undefined
-        : draft;
+  // Conflict resolution can acknowledge a newer revision before the ordinary
+  // detail query refreshes. Never render that older title over the accepted one.
+  const detail = query.status === "success" ? query.data : undefined;
+  const note = unavailable
+    ? undefined
+    : detail && !edit?.dirty && !edit?.pending && detail.revision >= (draft?.revision ?? 0)
+      ? createNoteModel({ ...detail, scopeEpoch: epoch })
+      : draft;
 
   useEffect(() => {
     const state = useNoteStore.getState();

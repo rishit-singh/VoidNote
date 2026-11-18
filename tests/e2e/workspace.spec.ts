@@ -102,17 +102,71 @@ test("session expiry retains an account-scoped title draft", async ({ page, work
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Private draft");
 });
 
+test("saved notes sign out directly without a draft decision", async ({ page, workspace }) => {
+  const note = workspace.seedNote();
+  await page.goto(`/notes/${note.id}`);
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(note.title);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Send sign-in link", exact: true })).toBeVisible();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  expect(workspace.signOutCount).toBe(1);
+  expect(workspace.mutations).toHaveLength(0);
+});
+
+test("logout retains an uncertain title save for the same account without replaying it", async ({
+  page,
+  workspace,
+}) => {
+  const account = workspace.session;
+  const note = workspace.seedNote();
+  await page.goto(`/notes/${note.id}`);
+  workspace.nextMutation = "lost-response";
+  await page.getByLabel("Title", { exact: true }).fill("Pending title");
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  const command = workspace.mutations[0]!.command;
+  await page.getByLabel("Title", { exact: true }).fill("Newer local title");
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Send sign-in link", exact: true })).toBeVisible();
+  expect(workspace.mutations).toHaveLength(1);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+
+  workspace.session = account;
+  await page.reload();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Newer local title");
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect.poll(() => workspace.notes.get(note.id)?.title).toBe("Newer local title");
+  expect(workspace.mutations[1]!.command).toEqual(command);
+});
+
+test("logout keeps unsaved profile edits local instead of implicitly saving them", async ({
+  page,
+  workspace,
+}) => {
+  const account = workspace.session;
+  const person = workspace.seedPerson({ displayName: "Original name" });
+  await page.goto(`/profiles/${person.id}`);
+  await page.getByLabel("Display name", { exact: true }).fill("Unsaved profile name");
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Send sign-in link", exact: true })).toBeVisible();
+  expect(workspace.mutations).toHaveLength(0);
+  expect(workspace.people.get(person.id)?.displayName).toBe("Original name");
+  workspace.session = account;
+  await page.reload();
+  await expect(page.getByLabel("Display name", { exact: true })).toHaveValue(
+    "Unsaved profile name",
+  );
+});
+
 test("failed sign-out keeps the current title recoverable", async ({ page, workspace }) => {
   const note = workspace.seedNote();
   await page.goto(`/notes/${note.id}`);
   await page.getByLabel("Title", { exact: true }).fill("Keep my work");
   workspace.signOutFails = true;
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await page.getByRole("button", { name: "Discard and sign out", exact: true }).click();
   await expect(page.getByRole("alertdialog").getByRole("alert")).toContainText(
     "Sign-out could not be confirmed",
   );
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
   await page.reload();
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Keep my work");
 });

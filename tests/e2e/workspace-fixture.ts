@@ -450,6 +450,17 @@ export class WorkspaceFixture {
     let record = replay;
     if (!record) {
       const previous = records.get(command.id);
+      if ((previous?.revision ?? 0) !== command.expectedRevision || previous?.deletedAt) {
+        await route.fulfill({
+          status: 409,
+          json: {
+            error: "The record has changed",
+            code: "conflict",
+            currentRevision: previous?.revision ?? 0,
+          },
+        });
+        return;
+      }
       const fields = {
         ...command.content,
         id: command.id,

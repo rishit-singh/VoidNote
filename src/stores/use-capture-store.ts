@@ -141,6 +141,8 @@ interface CaptureState {
   sessionId: string | null;
   stream: MediaStream | null;
   error: string | null;
+  /** Provisional browser speech for noteId; audio is the durable source. */
+  liveText: string;
   liveTextError: string | null;
   elapsedMs: number;
   savedChunks: number;
@@ -198,6 +200,7 @@ export const useCaptureStore = create<CaptureState>((set, get) => {
     sessionId: null,
     stream: null,
     error: null,
+    liveText: "",
     liveTextError: null,
     elapsedMs: 0,
     savedChunks: 0,
@@ -210,6 +213,8 @@ export const useCaptureStore = create<CaptureState>((set, get) => {
         status: "starting",
         noteId,
         error: null,
+        liveText: "",
+        liveTextError: null,
         elapsedMs: 0,
         savedChunks: 0,
         waveformLevels: [],
@@ -361,7 +366,7 @@ export const useCaptureStore = create<CaptureState>((set, get) => {
     upload: async (noteId, file) => {
       if (runtime || !["idle", "error"].includes(get().status)) return;
       useAudioPlaybackStore.getState().pause();
-      set({ status: "stopping", noteId, error: null });
+      set({ status: "stopping", noteId, error: null, liveText: "", liveTextError: null });
       let id: string | undefined;
       const epoch = useNoteStore.getState().epoch;
       let release: (() => void) | undefined;
@@ -397,7 +402,7 @@ export const useCaptureStore = create<CaptureState>((set, get) => {
     },
     recover: async (id) => {
       if (runtime || !["idle", "error"].includes(get().status)) return;
-      set({ status: "stopping" });
+      set({ status: "stopping", liveText: "", liveTextError: null });
       const epoch = useNoteStore.getState().epoch;
       try {
         const session = useRecordingStore.getState().sessions[id];
@@ -430,14 +435,9 @@ export const useCaptureStore = create<CaptureState>((set, get) => {
     appendText: (text) => {
       const run = runtime;
       if (!run || get().status !== "recording" || !currentOwner(run.owner)) return;
-      const state = useNoteStore.getState();
-      const note = materializeOwner(run.owner);
-      if (note)
-        state.upsertNote({
-          ...note,
-          transcript: `${note.transcript}\n${text}`.trim(),
-          updatedAt: new Date().toISOString(),
-        });
+      const snippet = text.trim();
+      if (!snippet || get().noteId !== run.owner.noteId) return;
+      set((state) => ({ liveText: `${state.liveText}\n${snippet}`.trim() }));
     },
   };
 });
@@ -462,6 +462,7 @@ export function watchCaptureOwner() {
         sessionId: null,
         stream: null,
         error: null,
+        liveText: "",
         liveTextError: null,
         elapsedMs: 0,
         savedChunks: 0,

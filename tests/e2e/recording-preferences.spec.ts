@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { expect, test, userId, workspaceId } from "./workspace-fixture";
 
 const preferenceStorageKey = "voidnote-recording-preferences-v1";
@@ -112,11 +113,7 @@ test("preference controls persist their actual values and report storage failure
   await expect(page.getByRole("status").filter({ hasText: "could not be saved" })).toHaveCount(0);
 });
 
-test("live text can explicitly restart after recognition ends without restarting audio capture", async ({
-  page,
-  workspace,
-}) => {
-  const note = workspace.seedNote({ title: "Speech recognition" });
+async function installLiveCapture(page: Page) {
   await page.addInitScript(
     ({ key, ownerKey }) => {
       class FakeRecognition {
@@ -143,6 +140,13 @@ test("live text can explicitly restart after recognition ends without restarting
       Object.defineProperty(window, "SpeechRecognition", { value: FakeRecognition });
       Object.defineProperty(window, "endFakeRecognition", {
         value: () => FakeRecognition.instances.at(-1)?.onend?.(),
+      });
+      Object.defineProperty(window, "emitFakeSpeech", {
+        value: (text: string) =>
+          FakeRecognition.instances.at(-1)?.onresult?.({
+            resultIndex: 0,
+            results: [{ isFinal: true, 0: { transcript: text } }],
+          }),
       });
       Object.defineProperty(window, "recognitionInstanceCount", {
         get: () => FakeRecognition.instances.length,
@@ -206,6 +210,176 @@ test("live text can explicitly restart after recognition ends without restarting
     },
     { key: preferenceStorageKey, ownerKey: `${userId}:${workspaceId}` },
   );
+}
+
+async function emitSpeech(page: Page, text: string) {
+  await page.evaluate((text) => {
+    const emit = Reflect.get(window, "emitFakeSpeech") as (text: string) => void;
+    emit(text);
+  }, text);
+}
+
+async function captureManifests(page: Page) {
+  return page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("voidnote-recordings", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error ?? new Error("Unable to read recordings"));
+    });
+    try {
+      return await new Promise<
+        Array<{ id: string; noteId: string; status: string; chunkCount: number; byteCount: number }>
+      >((resolve, reject) => {
+        const request = db.transaction("sessions").objectStore("sessions").getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error("Unable to read manifests"));
+      });
+    } finally {
+      db.close();
+    }
+  });
+}
+
+test("live speech stays a scoped preview while titles autosave and audio keeps its owner", async ({
+  page,
+  workspace,
+}) => {
+  const note = workspace.seedNote({ title: "Recording owner", transcript: "Legacy saved text" });
+  const other = workspace.seedNote({ title: "Other note" });
+  await installLiveCapture(page);
+  await page.goto(`/notes/${note.id}`);
+  await page.getByRole("button", { name: "Record", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Pause recording", exact: true })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, "recognitionInstanceCount") as number))
+    .toBe(1);
+  const [started] = await captureManifests(page);
+  expect(started?.noteId).toBe(note.id);
+
+  await emitSpeech(page, "First provisional words");
+  const transcript = page.getByRole("region", { name: "Transcript", exact: true });
+  await expect(transcript.getByText("Live preview", { exact: true })).toBeVisible();
+  await expect(transcript.getByText("First provisional words", { exact: true })).toBeVisible();
+  let releaseSave!: () => void;
+  const saveGate = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  let saveStarted = false;
+  await page.route(`**/api/workspaces/${workspaceId}/notes`, async (route) => {
+    if (route.request().method() === "POST" && !saveStarted) {
+      saveStarted = true;
+      await saveGate;
+    }
+    await route.fallback();
+  });
+  try {
+    await page.getByLabel("Title", { exact: true }).fill("Renamed during capture");
+    await expect.poll(() => saveStarted).toBe(true);
+    await emitSpeech(page, "More provisional words while rename is pending");
+    await page.getByLabel("Title", { exact: true }).fill("Final recording title");
+  } finally {
+    releaseSave();
+  }
+  await expect.poll(() => workspace.notes.get(note.id)?.title).toBe("Final recording title");
+  const saves = workspace.mutations.length;
+  await emitSpeech(page, "Speech after the last rename");
+  // Observe beyond the title debounce: speech alone must not create another save.
+  await page.waitForTimeout(900);
+  expect(workspace.mutations).toHaveLength(saves);
+  expect(workspace.notes.get(note.id)?.transcript).toBe("Legacy saved text");
+  for (const { command } of workspace.mutations) {
+    expect(command.id).toBe(note.id);
+    expect(JSON.stringify(command.content)).not.toContain("provisional");
+    expect(JSON.stringify(command.content)).not.toContain("Speech after");
+  }
+  await expect(page.getByText("This note changed elsewhere.", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Home", exact: true }).first().click();
+  await page.locator(`a[href="/notes/${other.id}"]`).first().click();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(other.title);
+  await emitSpeech(page, "Words while viewing another note");
+  await expect(page.getByText("Live preview", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Words while viewing another note", { exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "Home", exact: true }).first().click();
+  await page.locator(`a[href="/notes/${note.id}"]`).first().click();
+  await expect(transcript).toContainText("Words while viewing another note");
+  await page.getByRole("button", { name: "Pause recording", exact: true }).click();
+  await expect.poll(async () => (await captureManifests(page))[0]?.chunkCount).toBe(1);
+  await page.getByRole("button", { name: "Resume recording", exact: true }).click();
+  await page.getByRole("button", { name: "Stop recording", exact: true }).click();
+  await expect.poll(async () => (await captureManifests(page))[0]?.status).toBe("finalized");
+  const [finished] = await captureManifests(page);
+  expect(finished).toMatchObject({
+    id: started!.id,
+    noteId: note.id,
+    chunkCount: 2,
+    byteCount: 8,
+  });
+  expect(await page.evaluate(() => Reflect.get(window, "captureStartedCount") as number)).toBe(1);
+  expect(workspace.notes.get(other.id)?.transcript).toBe("");
+  await page.reload();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Final recording title");
+  await expect(page.getByText("Live preview", { exact: true })).toHaveCount(0);
+  expect(workspace.notes.get(note.id)?.transcript).toBe("Legacy saved text");
+});
+
+test("live speech during Use latest cannot retain or resave a discarded title", async ({
+  page,
+  workspace,
+}) => {
+  const note = workspace.seedNote({ title: "Original title" });
+  await installLiveCapture(page);
+  await page.goto(`/notes/${note.id}`);
+  await page.getByRole("button", { name: "Record", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, "recognitionInstanceCount") as number))
+    .toBe(1);
+  const latest = workspace.seedNote({ ...note, title: "Latest server title", revision: 2 });
+  await page.getByLabel("Title", { exact: true }).fill("Discard this title");
+  await expect(page.getByText("This note changed elsewhere.", { exact: true })).toBeVisible();
+  let releaseRead!: () => void;
+  const readGate = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
+  let readStarted = false;
+  await page.route(`**/api/workspaces/${workspaceId}/notes/${note.id}?*`, async (route) => {
+    if (new URL(route.request().url()).searchParams.get("includeDeleted") !== "true") {
+      await route.fallback();
+      return;
+    }
+    readStarted = true;
+    await readGate;
+    await route.fulfill({ json: latest });
+  });
+  try {
+    await page.getByRole("button", { name: "Use latest", exact: true }).click();
+    await expect.poll(() => readStarted).toBe(true);
+    await emitSpeech(page, "Speech during conflict resolution");
+    await expect(
+      page.getByText("Speech during conflict resolution", { exact: true }),
+    ).toBeVisible();
+    releaseRead();
+    await expect(page.getByLabel("Title", { exact: true })).toHaveValue(latest.title);
+    await emitSpeech(page, "Speech after conflict resolution");
+    // A preview update must not restart the title autosave debounce.
+    await page.waitForTimeout(900);
+    expect(workspace.mutations).toHaveLength(1);
+    expect(workspace.notes.get(note.id)).toEqual(latest);
+    await expect(page.getByText("This note changed elsewhere.", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Pause recording", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => Reflect.get(window, "captureStartedCount") as number)).toBe(1);
+    await page.getByRole("button", { name: "Stop recording", exact: true }).click();
+  } finally {
+    releaseRead();
+  }
+});
+
+test("live text can explicitly restart after recognition ends without restarting audio capture", async ({
+  page,
+  workspace,
+}) => {
+  const note = workspace.seedNote({ title: "Speech recognition" });
+  await installLiveCapture(page);
   await page.goto(`/notes/${note.id}`);
   await page.getByRole("button", { name: "Record", exact: true }).click();
   await expect(page.getByRole("button", { name: "Pause recording" })).toBeVisible();

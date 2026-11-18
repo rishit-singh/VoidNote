@@ -163,7 +163,6 @@ test("sign-out unloads playing audio and revokes its player URL", async ({ page,
   // Retain the actual DOM node so unmounting it cannot hide a still-playing resource.
   await audio.evaluate((element) => Reflect.set(window, "oldIntegrationAudio", element));
   await page.getByRole("button", { name: "Sign out", exact: true }).first().click();
-  await page.getByRole("button", { name: "Discard and sign out", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(() => {

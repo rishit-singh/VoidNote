@@ -70,6 +70,11 @@ void describe("workspace store recovery boundaries (no database)", { concurrency
       if (mutationStatus !== 200)
         return Promise.reject(new ApiError("Injected failure", mutationStatus));
       const existing = records.get(command.id);
+      if ((existing?.revision ?? 0) !== command.expectedRevision || existing?.deletedAt) {
+        return Promise.reject(
+          new ApiError("The record has changed", 409, "conflict", existing?.revision ?? 0),
+        );
+      }
       const record: NoteRecord = {
         ...command.content,
         id: command.id,
@@ -94,6 +99,11 @@ void describe("workspace store recovery boundaries (no database)", { concurrency
       if (mutationStatus !== 200)
         return Promise.reject(new ApiError("Injected failure", mutationStatus));
       const existing = personRecords.get(command.id);
+      if ((existing?.revision ?? 0) !== command.expectedRevision || existing?.deletedAt) {
+        return Promise.reject(
+          new ApiError("The record has changed", 409, "conflict", existing?.revision ?? 0),
+        );
+      }
       const record: PersonRecord = {
         ...command.content,
         id: command.id,
@@ -260,16 +270,101 @@ void describe("workspace store recovery boundaries (no database)", { concurrency
     );
   });
 
-  void it("discards current scope only after successful logout confirmation", async () => {
-    useNoteStore.getState().createNote();
+  void it("retains unsynced work through logout without saving or discarding it", async () => {
+    const note = useNoteStore.getState().createNote();
+    useNoteStore.getState().upsertNote({ ...note, title: "Keep for next sign-in" });
     logoutStatus = 503;
-    await useNoteStore.getState().signOut(true);
+    await useNoteStore.getState().signOut();
     assert.ok(useNoteStore.getState().session);
     assert.equal(values.size, 1);
     logoutStatus = 200;
-    await useNoteStore.getState().signOut(true);
+    await useNoteStore.getState().signOut();
     assert.equal(useNoteStore.getState().session, null);
-    assert.equal(values.size, 0);
+    assert.equal(values.size, 1);
+    assert.equal(commands.length, 0);
+    await useNoteStore.getState().refreshSession();
+    assert.equal(useNoteStore.getState().notes[0]?.title, "Keep for next sign-in");
+  });
+
+  void it("allows clean logout even if draft storage is unavailable", async () => {
+    failWrites = true;
+    await useNoteStore.getState().signOut();
+    assert.equal(useNoteStore.getState().session, null);
+  });
+
+  void it("retains an in-flight save through logout and reconciles its exact receipt on return", async () => {
+    const note = useNoteStore.getState().createNote();
+    useNoteStore.getState().upsertNote({ ...note, title: "Saving during logout" });
+    const saveNote = workspaceApi.saveNote;
+    let release!: () => void;
+    let receipt: NoteRecord | undefined;
+    workspaceApi.saveNote = async (workspaceId, command) => {
+      if (receipt) {
+        assert.deepEqual(command, commands[0]);
+        return receipt;
+      }
+      receipt = await saveNote(workspaceId, command);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return receipt;
+    };
+    const saving = useNoteStore.getState().saveNote(note.id);
+    await Promise.resolve();
+    await useNoteStore.getState().signOut();
+    const [retained] = await workspaceRecovery(scope).read();
+    assert.deepEqual(retained?.edit.pending?.command, commands[0]);
+    release();
+    await saving;
+    assert.equal(useNoteStore.getState().session, null);
+    assert.deepEqual(useNoteStore.getState().notes, []);
+    await useNoteStore.getState().refreshSession();
+    await useNoteStore.getState().retry("note", note.id);
+    assert.equal(useNoteStore.getState().notes[0]?.title, "Saving during logout");
+    assert.equal(useNoteStore.getState().edits[`note:${note.id}`]?.pending, null);
+    assert.equal(useNoteStore.getState().edits[`note:${note.id}`]?.dirty, false);
+    assert.equal(commands.length, 1);
+  });
+
+  void it("does not lose a retained deleted-note draft when storage fails before logout", async () => {
+    const note = useNoteStore.getState().createNote();
+    useNoteStore.getState().upsertNote({ ...note, title: "Uncertain request" });
+    mutationStatus = 503;
+    await useNoteStore.getState().saveNote(note.id);
+    const receipt: NoteRecord = {
+      ...commands[0]!.content,
+      id: note.id,
+      workspaceId: scope.workspace.id,
+      revision: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      deletedAt: null,
+    };
+    workspaceApi.saveNote = () => Promise.resolve(receipt);
+    workspaceApi.note = () => {
+      failWrites = true;
+      useNoteStore.getState().upsertNote({ ...note, title: "Newer retained draft" });
+      return Promise.resolve({ ...receipt, revision: 2, deletedAt: new Date().toISOString() });
+    };
+    await useNoteStore.getState().retry("note", note.id);
+    assert.deepEqual(useNoteStore.getState().edits, {});
+    assert.equal(useNoteStore.getState().notes.length, 0);
+    await useNoteStore.getState().signOut();
+    assert.equal(useNoteStore.getState().session?.user.id, scope.user.id);
+    failWrites = false;
+    await useNoteStore.getState().signOut();
+    assert.equal(useNoteStore.getState().session, null);
+    const [retained] = await workspaceRecovery(scope).read();
+    assert.equal(retained?.entity === "note" && retained.draft.title, "Newer retained draft");
+  });
+
+  void it("keeps the session when unsynced edits cannot be checkpointed for logout", async () => {
+    const note = useNoteStore.getState().createNote();
+    useNoteStore.getState().upsertNote({ ...note, title: "Only here" });
+    failWrites = true;
+    await useNoteStore.getState().signOut();
+    assert.equal(useNoteStore.getState().session?.user.id, scope.user.id);
+    assert.equal(useNoteStore.getState().notes[0]?.title, "Only here");
   });
 
   void it("hydrates deep links without a list hit and scopes missing route state", async () => {

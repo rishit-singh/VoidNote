@@ -50,7 +50,7 @@ interface NoteStoreState {
   refreshSession: () => Promise<void>;
   retryRecovery: () => Promise<void>;
   clearSession: () => void;
-  signOut: (discardDrafts?: boolean) => Promise<void>;
+  signOut: () => Promise<void>;
   saveAll: () => Promise<boolean>;
   ensureNote: (id: string, retry?: boolean) => Promise<void>;
   ensurePerson: (id: string, retry?: boolean) => Promise<void>;
@@ -686,26 +686,21 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
         recoveryError: null,
       });
     },
-    signOut: async (discardDrafts = false) => {
-      if (!discardDrafts && !checkpoint()) {
-        set({ error: "Sign-out paused: drafts could not be stored locally." });
+    signOut: async () => {
+      const hasUnsyncedEdits =
+        retained.length > 0 ||
+        Object.values(get().edits).some(
+          (edit) => edit.dirty || edit.pending || edit.conflict !== null,
+        );
+      if (hasUnsyncedEdits && !checkpoint()) {
+        set({ error: "Your unsynced changes could not be kept on this device. Please try again." });
         return;
       }
-      const currentRecovery = recovery;
       const epoch = get().epoch;
       try {
         await workspaceApi.signOut();
         if (get().epoch !== epoch) return;
         get().clearSession();
-        if (discardDrafts) {
-          try {
-            currentRecovery?.discard();
-          } catch (error) {
-            rawSet({
-              recoveryError: `Signed out, but local draft recovery could not be removed: ${message(error)}`,
-            });
-          }
-        }
       } catch (error) {
         if (get().epoch === epoch)
           set({ error: `Sign-out could not be confirmed: ${message(error)}` });

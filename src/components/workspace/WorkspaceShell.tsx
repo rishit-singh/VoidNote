@@ -12,14 +12,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useNoteStore } from "@/stores/use-note-store";
 import { useCaptureStore } from "@/stores/use-capture-store";
@@ -56,7 +54,6 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   const edits = useNoteStore((state) => state.edits);
   const createNote = useNoteStore((state) => state.createNote);
   const signOut = useNoteStore((state) => state.signOut);
-  const saveAll = useNoteStore((state) => state.saveAll);
   const captureStatus = useCaptureStore((state) => state.status);
   const captureActive = ["starting", "recording", "paused", "stopping"].includes(captureStatus);
   const selectedSection = activeSection(pathname);
@@ -65,6 +62,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
     : null;
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
 
   const recentNotes = useRecentNotes();
 
@@ -73,38 +71,32 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
     router.push(`/notes/${encodeURIComponent(created.id)}`);
   }
 
-  async function saveAndSignOut() {
+  async function requestSignOut() {
+    if (signingOut) return;
     setSignOutError(null);
+    if (
+      ["starting", "recording", "paused", "stopping"].includes(useCaptureStore.getState().status)
+    ) {
+      setSignOutOpen(true);
+      return;
+    }
+    setSigningOut(true);
     try {
-      const saved = await saveAll();
-      if (!saved) {
-        setSignOutError(
-          "Some changes could not be saved. Resolve them or discard drafts before signing out.",
-        );
-        return;
-      }
       await signOut();
       if (useNoteStore.getState().status !== "signedOut") {
         setSignOutError(
           useNoteStore.getState().error ?? "Sign-out could not be confirmed. Try again.",
         );
+        setSignOutOpen(true);
         return;
       }
       setSignOutOpen(false);
     } catch (failure) {
       setSignOutError(failure instanceof Error ? failure.message : "Unable to sign out.");
+      setSignOutOpen(true);
+    } finally {
+      setSigningOut(false);
     }
-  }
-
-  async function discardAndSignOut() {
-    await signOut(true);
-    if (useNoteStore.getState().status !== "signedOut") {
-      setSignOutError(
-        useNoteStore.getState().error ?? "Sign-out could not be confirmed. Try again.",
-      );
-      return;
-    }
-    setSignOutOpen(false);
   }
 
   if (!session && pathname === "/") {
@@ -158,11 +150,15 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
     <AlertDialog
       open={signOutOpen}
       onOpenChange={(open) => {
+        if (signingOut) return;
         setSignOutOpen(open);
         if (!open) setSignOutError(null);
       }}
     >
-      <div className="flex h-dvh min-h-dvh w-full overflow-hidden bg-vn-page font-mono text-body text-vn-text [&_:is(a,button,input,textarea):focus-visible]:outline [&_:is(a,button,input,textarea):focus-visible]:outline-2 [&_:is(a,button,input,textarea):focus-visible]:outline-offset-[3px] [&_:is(a,button,input,textarea):focus-visible]:outline-vn-secondary motion-reduce:[&_*]:!scroll-auto motion-reduce:[&_*]:![transition-duration:0.01ms] motion-reduce:[&_*::before]:!scroll-auto motion-reduce:[&_*::before]:![transition-duration:0.01ms] motion-reduce:[&_*::after]:!scroll-auto motion-reduce:[&_*::after]:![transition-duration:0.01ms] [@media(max-width:760px)]:flex-col [@media(max-width:760px)]:overflow-auto">
+      <div
+        inert={signingOut}
+        className="flex h-dvh min-h-dvh w-full overflow-hidden bg-vn-page font-mono text-body text-vn-text [&_:is(a,button,input,textarea):focus-visible]:outline [&_:is(a,button,input,textarea):focus-visible]:outline-2 [&_:is(a,button,input,textarea):focus-visible]:outline-offset-[3px] [&_:is(a,button,input,textarea):focus-visible]:outline-vn-secondary motion-reduce:[&_*]:!scroll-auto motion-reduce:[&_*]:![transition-duration:0.01ms] motion-reduce:[&_*::before]:!scroll-auto motion-reduce:[&_*::before]:![transition-duration:0.01ms] motion-reduce:[&_*::after]:!scroll-auto motion-reduce:[&_*::after]:![transition-duration:0.01ms] [@media(max-width:760px)]:flex-col [@media(max-width:760px)]:overflow-auto"
+      >
         <RecordingController noteId={noteId ?? undefined} />
         <aside
           className="flex min-h-dvh flex-[0_0_224px] flex-col gap-6 border-r border-vn-divider bg-vn-sidebar px-4 pb-5 pt-7 [@media(max-width:760px)]:hidden"
@@ -224,12 +220,15 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
             <span className="truncate text-[11px] text-vn-muted" title={session?.user.email ?? ""}>
               {session?.user.email}
             </span>
-            <AlertDialogTrigger asChild>
-              <Button className="justify-start gap-2.5 px-1.5 py-0" variant="workspace-ghost">
-                <ExitIcon data-icon="inline-start" aria-hidden="true" />
-                Sign out
-              </Button>
-            </AlertDialogTrigger>
+            <Button
+              className="justify-start gap-2.5 px-1.5 py-0"
+              variant="workspace-ghost"
+              disabled={signingOut}
+              onClick={() => void requestSignOut()}
+            >
+              <ExitIcon data-icon="inline-start" aria-hidden="true" />
+              {signingOut ? "Signing out…" : "Sign out"}
+            </Button>
           </div>
         </aside>
         <main
@@ -298,41 +297,25 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
       </div>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Sign out of VoidNote?</AlertDialogTitle>
+          <AlertDialogTitle>
+            {captureActive ? "Recording in progress" : "Sign out"}
+          </AlertDialogTitle>
           <AlertDialogDescription>
             {captureActive
-              ? "Stop the active recording before signing out. Its audio is being saved locally."
-              : "Drafts are stored on this device for recovery, not in your account. Browser storage can be cleared or unavailable."}
+              ? "Stop recording before signing out."
+              : "Your unsynced changes stay on this device for your next sign-in."}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {recoveryError && (
-          <Alert variant="destructive">
-            <AlertDescription>Local recovery warning: {recoveryError}</AlertDescription>
-          </Alert>
-        )}
         {signOutError && (
           <Alert variant="destructive">
             <AlertDescription>{signOutError}</AlertDescription>
           </Alert>
         )}
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <Button
-            variant="outline"
-            disabled={captureActive}
-            onClick={() => void discardAndSignOut()}
-          >
-            Discard and sign out
+          <AlertDialogCancel disabled={signingOut}>Back</AlertDialogCancel>
+          <Button disabled={captureActive || signingOut} onClick={() => void requestSignOut()}>
+            {signingOut ? "Signing out…" : "Sign out"}
           </Button>
-          <AlertDialogAction
-            disabled={captureActive}
-            onClick={(event) => {
-              event.preventDefault();
-              void saveAndSignOut();
-            }}
-          >
-            Save and sign out
-          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

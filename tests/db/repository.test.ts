@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { after, describe, it } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { noteListSchema, noteSchema } from "../../src/contracts/notes";
 import { personListSchema, toPersonListItem } from "../../src/contracts/people";
 import {
@@ -234,13 +235,8 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
         ),
       ),
     );
-    const successes = results.filter((value) => value.status === "fulfilled");
-    const failures = results.filter((value) => value.status === "rejected");
-    assert.equal(successes.length, 1);
-    assert.equal(failures.length, 1);
-    assert.ok(code("conflict")(failures[0]?.reason));
-    assert.equal((failures[0]?.reason as WorkspaceError).currentRevision, 2);
-    assert.deepEqual(await repo.getNote(principal, workspaceId, initial.id), successes[0]?.value);
+    const winner = assertSingleRevisionWinner(results, 2);
+    assert.deepEqual(await repo.getNote(principal, workspaceId, initial.id), winner);
     assert.deepEqual(await counts(workspaceId), {
       notes: 1,
       people: 0,
@@ -249,6 +245,90 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
       outbox: 2,
     });
   });
+
+  void it("commits an unrelated note while a blocked edit holds its command claim", async () => {
+    const { principal, workspaceId } = await workspace();
+    const initial = await repo.saveNote(principal, workspaceId, note());
+    const edit = note({ id: initial.id, expectedRevision: 1 });
+    const save = (command: ReturnType<typeof note>) =>
+      repo.saveNote(principal, workspaceId, command);
+    let writers: Promise<PromiseSettledResult<void>[]> = Promise.resolve([]);
+    await sql
+      .begin(async (holder) => {
+        const [lock] = await holder<{ pid: number }[]>`
+        select pg_backend_pid() as pid from notes
+        where workspace_id = ${workspaceId} and id = ${initial.id} for update`;
+        assert.ok(lock);
+
+        const editResult = save(edit);
+        const editorPid = waitForBlockedBackend(lock.pid);
+        // A different target cannot take this ID even though the edit hasn't committed.
+        const reused = editorPid.then(() => save(note({ commandId: edit.commandId })));
+        const unrelated = editorPid.then(async (pid) => {
+          await waitForBlockedBackend(pid);
+          return save(note());
+        });
+        writers = Promise.allSettled([
+          editResult.then((record) => assert.equal(record.revision, 2)),
+          assert.rejects(reused, code("command_reused")),
+          unrelated.then((record) => assert.equal(record.revision, 1)),
+        ]);
+
+        // Keep the row locked until the unrelated command commits. Bound the failure
+        // path and drain all three writers after releasing the lock, even on regression.
+        const timer = new AbortController();
+        const deadline = delay(3_000, undefined, { signal: timer.signal }).then(() => {
+          assert.fail("Unrelated note did not commit while the first edit was blocked");
+        });
+        await Promise.race([unrelated, deadline]).finally(() => timer.abort());
+      })
+      .finally(() => writers);
+    for (const result of await writers) {
+      if (result.status === "rejected") throw result.reason;
+    }
+    assert.deepEqual(await counts(workspaceId), {
+      notes: 2,
+      people: 0,
+      events: 3,
+      receipts: 3,
+      outbox: 3,
+    });
+  });
+
+  for (const entity of ["note", "person"] as const) {
+    void it(`permits one create and one subsequent edit or delete of the same ${entity} revision`, async () => {
+      const { principal, workspaceId } = await workspace();
+      const id = randomUUID();
+      const save = (expectedRevision: number) =>
+        entity === "note"
+          ? repo.saveNote(principal, workspaceId, note({ id, expectedRevision }))
+          : repo.savePerson(principal, workspaceId, person({ id, expectedRevision }));
+      const creates = await Promise.allSettled([save(0), save(0)]);
+      assertSingleRevisionWinner(creates, 1);
+
+      const remove = { id, expectedRevision: 1, commandId: randomUUID() };
+      const edits = await Promise.allSettled([
+        save(1),
+        entity === "note"
+          ? repo.deleteNote(principal, workspaceId, remove)
+          : repo.deletePerson(principal, workspaceId, remove),
+      ]);
+      const winner = assertSingleRevisionWinner(edits, 2);
+      assert.equal(winner.deletedAt !== null, edits[1].status === "fulfilled");
+      const stored =
+        entity === "note"
+          ? await repo.getNote(principal, workspaceId, id, true)
+          : await repo.getPerson(principal, workspaceId, id, true);
+      assert.deepEqual(stored, winner);
+      assert.deepEqual(await counts(workspaceId), {
+        notes: entity === "note" ? 1 : 0,
+        people: entity === "person" ? 1 : 0,
+        events: 2,
+        receipts: 2,
+        outbox: 2,
+      });
+    });
+  }
 
   void it("denies cross-workspace reads, lists, commands and history", async () => {
     const a = await workspace();
@@ -745,6 +825,35 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     }
   });
 });
+
+async function waitForBlockedBackend(blockerPid: number) {
+  const deadline = Date.now() + 2_000;
+  do {
+    const [waiter] = await sql<{ pid: number }[]>`
+      select pid from pg_stat_activity where datname = current_database()
+      and ${blockerPid}::int = any(pg_blocking_pids(pid))`;
+    if (waiter) return waiter.pid;
+    await delay(10);
+  } while (Date.now() < deadline);
+  assert.fail(`No PostgreSQL command was observed waiting on backend ${blockerPid}`);
+}
+
+function assertSingleRevisionWinner<T extends { revision: number }>(
+  results: PromiseSettledResult<T>[],
+  revision: number,
+) {
+  const winners = results.filter((result) => result.status === "fulfilled");
+  const losers = results.filter((result) => result.status === "rejected");
+  assert.equal(winners.length, 1);
+  assert.equal(losers.length, 1);
+  const conflict: unknown = losers[0]!.reason;
+  assert.ok(conflict instanceof WorkspaceError);
+  assert.equal(conflict.code, "conflict");
+  assert.equal(conflict.currentRevision, revision);
+  const winner = winners[0]!.value;
+  assert.equal(winner.revision, revision);
+  return winner;
+}
 
 async function collect<T extends { id: string }>(
   read: (query: ListQuery) => Promise<{ items: T[]; nextCursor: string | null }>,

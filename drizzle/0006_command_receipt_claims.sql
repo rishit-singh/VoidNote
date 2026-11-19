@@ -1,0 +1,1 @@
+ALTER TABLE "command_receipts" ALTER COLUMN "result" DROP NOT NULL;

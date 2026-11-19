@@ -43,6 +43,13 @@
       "when": 1794668555905,
       "tag": "0005_transcript_corrections",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795051280627,
+      "tag": "0006_command_receipt_claims",
+      "breakpoints": true
     }
   ]
 }

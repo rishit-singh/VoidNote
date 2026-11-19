@@ -145,7 +145,12 @@ async function fingerprint(value: unknown) {
   return Buffer.from(digest).toString("hex");
 }
 
-async function authorize(tx: Transaction, principal: Principal, workspaceId: string) {
+async function authorize(
+  tx: Transaction,
+  principal: Principal,
+  workspaceId: string,
+  writing = false,
+) {
   idSchema.parse(principal.id);
   idSchema.parse(workspaceId);
   const [membership] = await tx
@@ -160,20 +165,42 @@ async function authorize(tx: Transaction, principal: Principal, workspaceId: str
         isNull(workspaces.deletedAt),
       ),
     )
-    // Prevent membership revocation during an authorized transaction. Only lock
-    // membership here: upgrading shared workspace locks would deadlock writers.
-    .for("share", { of: workspaceMemberships })
+    // Commands share the workspace lifecycle guard: deletion waits for them,
+    // but they never upgrade this lock or exclude other commands.
+    .for("share", { of: writing ? [workspaceMemberships, workspaces] : workspaceMemberships })
     .limit(1);
   if (!membership) throw new WorkspaceError("forbidden", "Workspace access denied");
 }
 
-function checkRevision(
-  current: { revision: number; deletedAt: string | null } | undefined,
-  expected: number,
+function matchesRevision(
+  table: typeof notes | typeof people,
+  workspaceId: string,
+  input: DeleteCommand,
 ) {
-  if ((current?.revision ?? 0) !== expected || current?.deletedAt != null) {
-    throw new WorkspaceError("conflict", "The record has changed", current?.revision ?? 0);
-  }
+  return and(
+    eq(table.workspaceId, workspaceId),
+    eq(table.id, input.id),
+    eq(table.revision, input.expectedRevision),
+    isNull(table.deletedAt),
+  );
+}
+
+// Only rejected commands need a second query, to report the current revision.
+async function writeMiss(
+  tx: Transaction,
+  table: typeof notes | typeof people,
+  workspaceId: string,
+  id: string,
+  deleting = false,
+): Promise<never> {
+  const [current] = await tx
+    .select({ revision: table.revision })
+    .from(table)
+    .where(and(eq(table.workspaceId, workspaceId), eq(table.id, id)))
+    .limit(1);
+  if (deleting && !current)
+    throw new WorkspaceError("not_found", table === notes ? "Note not found" : "Person not found");
+  throw new WorkspaceError("conflict", "The record has changed", current?.revision ?? 0);
 }
 
 async function readNote(tx: Transaction, workspaceId: string, id: string) {
@@ -215,38 +242,45 @@ export function createWorkspaceRepository(db: Database) {
     resultSchema: z.ZodType<T>,
     work: (tx: Transaction) => Promise<{ result: T; changed: boolean }>,
   ): Promise<T> {
+    const hash = await fingerprint({
+      actorId: principal.id,
+      workspaceId,
+      entityType,
+      operation,
+      operationVersion: 1,
+      input,
+    });
+    const receiptKey = and(
+      eq(commandReceipts.workspaceId, workspaceId),
+      eq(commandReceipts.commandId, input.commandId),
+    );
     return db.transaction(
       async (tx) => {
-        await authorize(tx, principal, workspaceId);
-        // MVP serialization boundary. READ COMMITTED reads following this lock see
-        // the previous writer's committed receipt and projection, including retries.
-        const [workspace] = await tx
-          .select({ id: workspaces.id })
-          .from(workspaces)
-          .where(and(eq(workspaces.id, workspaceId), isNull(workspaces.deletedAt)))
-          .for("update")
-          .limit(1);
-        if (!workspace) throw new WorkspaceError("forbidden", "Workspace access denied");
-        const hash = await fingerprint({
-          actorId: principal.id,
-          workspaceId,
-          entityType,
-          operation,
-          operationVersion: 1,
-          input,
-        });
-        const [receipt] = await tx
-          .select({ fingerprint: commandReceipts.fingerprint, result: commandReceipts.result })
-          .from(commandReceipts)
-          .where(
-            and(
-              eq(commandReceipts.workspaceId, workspaceId),
-              eq(commandReceipts.commandId, input.commandId),
-            ),
-          )
-          .limit(1);
-        if (receipt) {
-          if (receipt.fingerprint !== hash)
+        await authorize(tx, principal, workspaceId, true);
+        const [claim] = await tx
+          .insert(commandReceipts)
+          .values({
+            workspaceId,
+            commandId: input.commandId,
+            actorId: principal.id,
+            fingerprint: hash,
+          })
+          .onConflictDoNothing({ target: [commandReceipts.workspaceId, commandReceipts.commandId] })
+          .returning({ id: commandReceipts.commandId });
+        if (!claim) {
+          // A concurrent insert may have committed after our INSERT snapshot.
+          // A separate READ COMMITTED statement sees its completed receipt.
+          const [receipt] = await tx
+            .select({
+              actorId: commandReceipts.actorId,
+              fingerprint: commandReceipts.fingerprint,
+              result: commandReceipts.result,
+            })
+            .from(commandReceipts)
+            .where(receiptKey);
+          if (!receipt || receipt.result === null)
+            throw new Error("Missing completed command receipt");
+          if (receipt.actorId !== principal.id || receipt.fingerprint !== hash)
             throw new WorkspaceError(
               "command_reused",
               "Command ID was already used for different inputs",
@@ -254,15 +288,8 @@ export function createWorkspaceRepository(db: Database) {
           return resultSchema.parse(receipt.result);
         }
 
-        // Revision checks deliberately happen in work(), after the receipt lookup.
         const { result, changed } = await work(tx);
-        await tx.insert(commandReceipts).values({
-          workspaceId,
-          commandId: input.commandId,
-          actorId: principal.id,
-          fingerprint: hash,
-          result,
-        });
+        await tx.update(commandReceipts).set({ result }).where(receiptKey);
         if (changed) {
           const eventId = crypto.randomUUID();
           await tx.insert(domainEvents).values({
@@ -392,21 +419,21 @@ export function createWorkspaceRepository(db: Database) {
     ): Promise<NoteRecord> {
       const input = saveNoteSchema.parse(value);
       return command(principal, workspaceId, "note", "save", input, noteSchema, async (tx) => {
-        const current = await readNote(tx, workspaceId, input.id);
-        checkRevision(current, input.expectedRevision);
         const now = new Date();
-        const values = { ...input.content, revision: (current?.revision ?? 0) + 1, updatedAt: now };
-        const [row] = current
-          ? await tx
-              .update(notes)
-              .set(values)
-              .where(and(eq(notes.workspaceId, workspaceId), eq(notes.id, input.id)))
-              .returning(noteColumns)
-          : await tx
-              .insert(notes)
-              .values({ ...values, workspaceId, id: input.id, createdAt: now })
-              .returning(noteColumns);
-        if (!row) throw new Error("Note mutation returned no row");
+        const values = { ...input.content, revision: input.expectedRevision + 1, updatedAt: now };
+        const [row] =
+          input.expectedRevision > 0
+            ? await tx
+                .update(notes)
+                .set(values)
+                .where(matchesRevision(notes, workspaceId, input))
+                .returning(noteColumns)
+            : await tx
+                .insert(notes)
+                .values({ ...values, workspaceId, id: input.id, createdAt: now })
+                .onConflictDoNothing({ target: [notes.workspaceId, notes.id] })
+                .returning(noteColumns);
+        if (!row) return writeMiss(tx, notes, workspaceId, input.id);
         return { result: recordDates(row), changed: true };
       });
     },
@@ -418,16 +445,13 @@ export function createWorkspaceRepository(db: Database) {
     ): Promise<NoteRecord> {
       const input = deleteSchema.parse(value);
       return command(principal, workspaceId, "note", "delete", input, noteSchema, async (tx) => {
-        const current = await readNote(tx, workspaceId, input.id);
-        if (!current) throw new WorkspaceError("not_found", "Note not found");
-        checkRevision(current, input.expectedRevision);
         const now = new Date();
         const [row] = await tx
           .update(notes)
-          .set({ revision: current.revision + 1, updatedAt: now, deletedAt: now })
-          .where(and(eq(notes.workspaceId, workspaceId), eq(notes.id, input.id)))
+          .set({ revision: input.expectedRevision + 1, updatedAt: now, deletedAt: now })
+          .where(matchesRevision(notes, workspaceId, input))
           .returning(noteColumns);
-        if (!row) throw new Error("Note deletion returned no row");
+        if (!row) return writeMiss(tx, notes, workspaceId, input.id, true);
         return { result: recordDates(row), changed: true };
       });
     },
@@ -488,21 +512,21 @@ export function createWorkspaceRepository(db: Database) {
     ): Promise<PersonRecord> {
       const input = savePersonSchema.parse(value);
       return command(principal, workspaceId, "person", "save", input, personSchema, async (tx) => {
-        const current = await readPerson(tx, workspaceId, input.id);
-        checkRevision(current, input.expectedRevision);
         const now = new Date();
-        const values = { ...input.content, revision: (current?.revision ?? 0) + 1, updatedAt: now };
-        const [row] = current
-          ? await tx
-              .update(people)
-              .set(values)
-              .where(and(eq(people.workspaceId, workspaceId), eq(people.id, input.id)))
-              .returning(personColumns)
-          : await tx
-              .insert(people)
-              .values({ ...values, workspaceId, id: input.id, createdAt: now })
-              .returning(personColumns);
-        if (!row) throw new Error("Person mutation returned no row");
+        const values = { ...input.content, revision: input.expectedRevision + 1, updatedAt: now };
+        const [row] =
+          input.expectedRevision > 0
+            ? await tx
+                .update(people)
+                .set(values)
+                .where(matchesRevision(people, workspaceId, input))
+                .returning(personColumns)
+            : await tx
+                .insert(people)
+                .values({ ...values, workspaceId, id: input.id, createdAt: now })
+                .onConflictDoNothing({ target: [people.workspaceId, people.id] })
+                .returning(personColumns);
+        if (!row) return writeMiss(tx, people, workspaceId, input.id);
         return { result: recordDates(row), changed: true };
       });
     },
@@ -521,16 +545,13 @@ export function createWorkspaceRepository(db: Database) {
         input,
         personSchema,
         async (tx) => {
-          const current = await readPerson(tx, workspaceId, input.id);
-          if (!current) throw new WorkspaceError("not_found", "Person not found");
-          checkRevision(current, input.expectedRevision);
           const now = new Date();
           const [row] = await tx
             .update(people)
-            .set({ revision: current.revision + 1, updatedAt: now, deletedAt: now })
-            .where(and(eq(people.workspaceId, workspaceId), eq(people.id, input.id)))
+            .set({ revision: input.expectedRevision + 1, updatedAt: now, deletedAt: now })
+            .where(matchesRevision(people, workspaceId, input))
             .returning(personColumns);
-          if (!row) throw new Error("Person deletion returned no row");
+          if (!row) return writeMiss(tx, people, workspaceId, input.id, true);
           return { result: recordDates(row), changed: true };
         },
       );

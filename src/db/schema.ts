@@ -140,7 +140,8 @@ export const commandReceipts = pgTable(
     commandId: uuid("command_id").notNull(),
     actorId: uuid("actor_id").notNull(),
     fingerprint: text("fingerprint").notNull(),
-    result: jsonb("result").$type<NoteRecord | PersonRecord>().notNull(),
+    // NULL only while the inserting transaction owns an unfinished command.
+    result: jsonb("result").$type<NoteRecord | PersonRecord>(),
     createdAt: time("created_at").notNull().defaultNow(),
   },
   (t) => [

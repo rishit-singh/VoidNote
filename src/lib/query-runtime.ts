@@ -93,6 +93,17 @@ type Change = z.infer<typeof changeSchema>;
 
 let channel: BroadcastChannel | undefined;
 
+async function refreshWorkspaceOverview(runtime: QueryRuntime, workspaceId: string) {
+  const filter = runtime.trpc.workspace.overview.queryFilter({ workspaceId });
+  // Invalidation alone reuses a pending initial read with no cached data.
+  await runtime.queryClient.cancelQueries(filter);
+  if (runtime !== getQueryRuntime() || runtime.identity?.workspaceId !== workspaceId) {
+    return;
+  }
+
+  await runtime.queryClient.invalidateQueries(filter);
+}
+
 function invalidate(runtime: QueryRuntime, change: Change, detailUpdated = false) {
   const { queryClient: cache, trpc } = runtime;
   const scope = { workspaceId: change.workspaceId };
@@ -102,6 +113,10 @@ function invalidate(runtime: QueryRuntime, change: Change, detailUpdated = false
     ...(change.runId ? { runId: change.runId } : {}),
   };
   const tasks: Promise<void>[] = [];
+  if (change.resource !== "transcript") {
+    tasks.push(refreshWorkspaceOverview(runtime, change.workspaceId));
+  }
+
   switch (change.resource) {
     case "notes":
       tasks.push(cache.invalidateQueries(trpc.notes.list.queryFilter(scope)));

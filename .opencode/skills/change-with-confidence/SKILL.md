@@ -60,6 +60,9 @@ Use the relevant checks, rather than mechanically adding state machinery everywh
   Local stores own drafts, exact pending commands, preferences and runtime resources;
   components own temporary interactions. Avoid fetch effects, mirrored server stores
   and request-counter refs where the established query runtime owns cancellation.
+  Verify invalidation during the initial pending read as well as cached refreshes:
+  a library may reuse a data-less in-flight request and publish its stale result.
+  Cancel conflicting reads before refreshing, with scope checks across async gaps.
 - **Scope changes:** cancel outgoing reads, reject late completions and isolate the
   next account/workspace without erasing recoverable outgoing work. Keep server
   revisions distinct from local draft generations.

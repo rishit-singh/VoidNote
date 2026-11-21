@@ -47,6 +47,83 @@ try {
 void describe("workspace repository / real PostgreSQL", { concurrency: false }, () => {
   after(teardownDatabase);
 
+  void it("overview counts all live records and only ready audio on live notes", async () => {
+    const { principal, workspaceId } = await workspace();
+    assert.deepEqual(await repo.overview(principal, workspaceId), {
+      notes: 0,
+      profiles: 0,
+      recordings: 0,
+      recordedSeconds: 0,
+      recentRecordings: [],
+    });
+    const saved = await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        repo.saveNote(
+          principal,
+          workspaceId,
+          note({
+            content: { title: `Conversation ${index}`, transcript: "" },
+          }),
+        ),
+      ),
+    );
+    const profiles = await Promise.all(
+      [person(), person()].map((command) => repo.savePerson(principal, workspaceId, command)),
+    );
+    await repo.deletePerson(principal, workspaceId, {
+      id: profiles[0]!.id,
+      commandId: randomUUID(),
+      expectedRevision: 1,
+    });
+    const recordingIds: string[] = [];
+    for (let index = 0; index < saved.length; index += 1) {
+      const id = randomUUID();
+      recordingIds.push(id);
+      await sql`insert into recordings
+        (workspace_id, id, note_id, actor_id, sha256, bytes, mime_type, duration_seconds,
+         object_key, status, created_at, deleted_at)
+        values (${workspaceId}, ${id}, ${saved[index]!.id}, ${principal.id}, ${"a".repeat(64)},
+          100, 'audio/webm', ${index + 0.5}, ${`test/${id}`},
+          ${index === 6 ? "upload_pending" : "ready"},
+          ${new Date(Date.UTC(2026, 10, 20, 12, index)).toISOString()},
+          ${index === 7 ? new Date().toISOString() : null})`;
+    }
+    await repo.deleteNote(principal, workspaceId, {
+      id: saved[5]!.id,
+      commandId: randomUUID(),
+      expectedRevision: 1,
+    });
+    const outsider = await workspace();
+    await repo.saveNote(outsider.principal, outsider.workspaceId, note());
+    const result = await repo.overview(principal, workspaceId);
+    assert.equal(result.notes, 7);
+    assert.equal(result.profiles, 1);
+    assert.equal(result.recordings, 5);
+    assert.equal(result.recordedSeconds, 12.5);
+    assert.deepEqual(
+      result.recentRecordings.map((item) => item.id),
+      [recordingIds[4], recordingIds[3], recordingIds[2]],
+    );
+    assert.equal(result.recentRecordings[0]?.title, "Conversation 4");
+    const listed = await repo.listNotes(principal, workspaceId, { limit: 1, q: "" });
+    assert.equal(listed.items.length, 1);
+    assert.equal((await repo.overview(principal, workspaceId)).notes, 7);
+  });
+
+  void it("overview rejects outsiders, revoked membership and deleted workspaces", async () => {
+    const { principal, workspaceId } = await workspace();
+    const outsider = await workspace();
+    await assert.rejects(repo.overview(outsider.principal, workspaceId), code("forbidden"));
+    await sql`update workspace_memberships set revoked_at = now()
+      where workspace_id = ${workspaceId} and user_id = ${principal.id}`;
+    await assert.rejects(repo.overview(principal, workspaceId), code("forbidden"));
+    await sql`update workspaces set deleted_at = now() where id = ${outsider.workspaceId}`;
+    await assert.rejects(
+      repo.overview(outsider.principal, outsider.workspaceId),
+      code("forbidden"),
+    );
+  });
+
   void it("bootstraps one workspace and membership under concurrent first use", async () => {
     const principal = { id: randomUUID(), email: "concurrent@example.invalid" };
     const results = await Promise.all(

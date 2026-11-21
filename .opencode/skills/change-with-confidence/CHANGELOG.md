@@ -1,5 +1,13 @@
 # Guidance changes
 
+## 2026-11-20 — Initial-read invalidation
+
+- Home overview review reproduced TanStack Query reusing a pending initial read
+  during invalidation, allowing pre-mutation totals to become fresh cached data.
+- Added initial-read race verification and cancellation/scope guidance for query
+  integrations. `tests/db/query-invalidation.test.ts` holds the old read, verifies
+  abort and a fresh read, then rejects the old completion. The focused checks pass.
+
 ## 2026-11-14 — Project activation
 
 - Installed the agreed modification/refactoring workflow and companion structural

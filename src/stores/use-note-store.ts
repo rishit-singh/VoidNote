@@ -3,6 +3,7 @@
 import { create } from "zustand";
 
 import type { NoteRecord, PersonRecord, Session } from "@/contracts/workspace";
+import { getQueryRuntime } from "@/lib/query-runtime";
 import {
   validateRecoveryEntries,
   workspaceRecovery,
@@ -724,19 +725,34 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
     retry: (entity, id) => mutate(entity, id),
     resolveConflict: async (entity, id, keepDraft) => {
       const { session, epoch } = get();
+      const runtime = getQueryRuntime();
       const key = editKey(entity, id);
       const edit = get().edits[key];
       if (!session || !edit || edit.pending || edit.saving) return;
       updateEdit(key, { saving: true, error: null });
       try {
-        const record =
+        let record =
           entity === "note"
             ? await workspaceApi.note(session.workspace.id, id, true)
             : await workspaceApi.person(session.workspace.id, id, true);
         if (!scoped(epoch)) return;
         if (record.id !== id || record.workspaceId !== session.workspace.id)
           throw new Error("Unexpected record returned by server.");
-        if (keepDraft && record.deletedAt) {
+        // Verification uses includeDeleted; publish it to ordinary detail/list
+        // observers before clearing the conflict or discarding the selected draft.
+        record =
+          (entity === "note"
+            ? await reconcileNoteSnapshot(record as NoteRecord, runtime)
+            : await reconcilePersonSnapshot(record as PersonRecord, runtime)) ?? record;
+        if (!scoped(epoch)) return;
+        const knownRevision =
+          entity === "note" ? get().noteRecords[id]?.revision : get().personRecords[id]?.revision;
+        if (knownRevision !== undefined && knownRevision > record.revision) {
+          updateEdit(key, { saving: false, conflict: knownRevision });
+          return;
+        }
+        const changedDuringLoad = get().edits[key]?.generation !== edit.generation;
+        if ((keepDraft || changedDuringLoad) && record.deletedAt) {
           updateEdit(key, {
             saving: false,
             conflict: record.revision,
@@ -745,7 +761,6 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
           return;
         }
         // A rebase updates only the base revision. It never saves implicitly.
-        const changedDuringLoad = get().edits[key]?.generation !== edit.generation;
         updateEdit(key, {
           baseRevision: record.revision,
           dirty: keepDraft || changedDuringLoad,
@@ -762,7 +777,7 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
       } catch (error) {
         if (!scoped(epoch)) return;
         if (error instanceof ApiError && error.status === 404) {
-          if (keepDraft) {
+          if (keepDraft || get().edits[key]?.generation !== edit.generation) {
             updateEdit(key, {
               saving: false,
               error:

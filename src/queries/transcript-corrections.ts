@@ -236,7 +236,7 @@ export function submitCorrection(
     }),
   );
 
-  return rpcCall(() => mutation.mutate({ ...scope, command }));
+  return rpcCall(() => mutation.mutate({ ...scope, command })).finally(() => mutation.reset());
 }
 
 function assigned(

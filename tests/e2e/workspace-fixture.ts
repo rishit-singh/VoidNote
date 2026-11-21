@@ -4,6 +4,10 @@ import { z } from "zod";
 import { recordingOverviewSchema } from "../../src/contracts/recording-processing";
 import { personAppearancesSchema } from "../../src/contracts/transcript-corrections";
 import { toPersonListItem } from "../../src/contracts/people";
+import {
+  workspaceOverviewSchema,
+  type WorkspaceOverview,
+} from "../../src/contracts/workspace-overview";
 
 import {
   deleteSchema,
@@ -87,6 +91,9 @@ function installRPCFixtureAdapter({ origin }: { origin: string }) {
       case "workspace.history":
         path = `${root}/history`;
         queryFields = ["entityType", "entityId", "cursor", "limit"];
+        break;
+      case "workspace.overview":
+        path = `${root}/overview`;
         break;
       case "notes.list":
       case "people.list":
@@ -239,6 +246,7 @@ export class WorkspaceFixture {
   };
   notes = new Map<string, NoteRecord>();
   people = new Map<string, PersonRecord>();
+  overviewRecordings: WorkspaceOverview["recentRecordings"] = [];
   mutations: Mutation[] = [];
   requests: string[] = [];
   /** Logical RPC invocations, including those served by test-specific page routes. */
@@ -322,6 +330,28 @@ export class WorkspaceFixture {
     const root = this.session && `/api/workspaces/${this.session.workspace.id}/`;
     if (!root || !path.startsWith(root)) return block();
     const [collection, id, extra] = path.slice(root.length).split("/");
+    if (collection === "overview" && !id && method === "GET") {
+      const liveNotes = [...this.notes.values()].filter(
+        (note) => note.workspaceId === this.session?.workspace.id && !note.deletedAt,
+      );
+      const liveIds = new Set(liveNotes.map((note) => note.id));
+      const recordings = this.overviewRecordings.filter((item) => liveIds.has(item.noteId));
+      await route.fulfill({
+        json: workspaceOverviewSchema.parse({
+          notes: liveNotes.length,
+          profiles: [...this.people.values()].filter(
+            (person) => person.workspaceId === this.session?.workspace.id && !person.deletedAt,
+          ).length,
+          recordings: recordings.length,
+          recordedSeconds: recordings.reduce((total, item) => total + item.durationSeconds, 0),
+          recentRecordings: recordings.slice(0, 3).map((item) => ({
+            ...item,
+            title: this.notes.get(item.noteId)!.title,
+          })),
+        }),
+      });
+      return;
+    }
     // Tests without a processing transport deliberately exercise recoverable offline upload.
     if (collection === "notes" && extra === "recordings" && method === "POST") {
       await route.fulfill({

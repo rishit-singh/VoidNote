@@ -283,6 +283,26 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
     assert.equal(opened, 0);
   });
 
+  void it("serves the authenticated overview contract and rejects unauthenticated access", async () => {
+    const overview = {
+      notes: 7,
+      profiles: 2,
+      recordings: 3,
+      recordedSeconds: 125.5,
+      recentRecordings: [],
+    };
+    repositoryResult = () => ({ ...overview, privateField: "must not escape" });
+    const response = await handle(request("workspace.overview", { workspaceId }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { result: { data: overview } });
+    assert.deepEqual(calls, [{ method: "overview", args: [user, workspaceId] }]);
+    assert.equal(opened, closed);
+    authenticate = () => Promise.reject(new backend.AuthError("unauthorized", "Sign in.", 401));
+    const denied = await handle(request("workspace.overview", { workspaceId }));
+    assert.equal(denied.status, 401);
+    assert.equal(calls.length, 1);
+  });
+
   void it("preserves repository conflict metadata and closes failed operations", async () => {
     repositoryResult = () => {
       throw new backend.WorkspaceError("conflict", "Newer correction exists.", 7, [noteId]);

@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { and, asc, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
+import { RECENT_RECORDINGS_LIMIT, workspaceOverviewSchema } from "../contracts/workspace-overview";
 import {
   PERSON_DESCRIPTION_PREVIEW_LENGTH,
   peopleQuerySchema,
@@ -35,6 +36,7 @@ import {
   notes,
   outbox,
   people,
+  recordings,
   userProfiles,
   workspaceMemberships,
   workspaces,
@@ -350,6 +352,52 @@ export function createWorkspaceRepository(db: Database) {
           });
         await authorize(tx, principal, workspace.id);
         return workspace;
+      });
+    },
+
+    async overview(principal: Principal, workspaceId: string) {
+      return read(principal, workspaceId, async (tx) => {
+        const readyAudio = and(
+          eq(recordings.workspaceId, workspaceId),
+          eq(recordings.status, "ready"),
+          isNull(recordings.deletedAt),
+          isNull(notes.deletedAt),
+        );
+        const parent = and(
+          eq(notes.workspaceId, recordings.workspaceId),
+          eq(notes.id, recordings.noteId),
+        );
+        const [totals] = await tx
+          .select({
+            notes: sql<number>`(select count(*)::int from ${notes} where ${notes.workspaceId} = ${workspaceId} and ${notes.deletedAt} is null)`,
+            profiles: sql<number>`(select count(*)::int from ${people} where ${people.workspaceId} = ${workspaceId} and ${people.deletedAt} is null)`,
+            recordings: sql<number>`count(*)::int`,
+            recordedSeconds: sql<number>`coalesce(sum(${recordings.durationSeconds}), 0)`,
+          })
+          .from(recordings)
+          .innerJoin(notes, parent)
+          .where(readyAudio);
+        const recent = await tx
+          .select({
+            id: recordings.id,
+            noteId: recordings.noteId,
+            title: notes.title,
+            durationSeconds: recordings.durationSeconds,
+            createdAt: recordings.createdAt,
+          })
+          .from(recordings)
+          .innerJoin(notes, parent)
+          .where(readyAudio)
+          .orderBy(desc(recordings.createdAt), asc(recordings.id))
+          .limit(RECENT_RECORDINGS_LIMIT);
+
+        return workspaceOverviewSchema.parse({
+          ...totals,
+          recentRecordings: recent.map((recording) => ({
+            ...recording,
+            createdAt: recording.createdAt.toISOString(),
+          })),
+        });
       });
     },
 

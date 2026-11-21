@@ -117,6 +117,25 @@ void describe("transcript correction query ownership", { concurrency: false }, (
     else Reflect.deleteProperty(globalThis, "window");
   });
 
+  for (const fails of [false, true]) {
+    void it(`collects completed correction mutations after ${fails ? "failure" : "success"}`, async () => {
+      const cache = runtime.queryClient;
+      cache.setDefaultOptions({ ...cache.getDefaultOptions(), mutations: { gcTime: 0 } });
+      const acknowledgement = result([turn(2, { revision: 2 })]);
+      globalThis.fetch = () =>
+        fails
+          ? Promise.reject(new Error("Injected failure"))
+          : Promise.resolve(Response.json({ result: { data: acknowledgement } }));
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const completion = submitCorrection(scope, split());
+        if (fails) await assert.rejects(completion, /Injected failure/);
+        else assert.deepEqual(await completion, acknowledgement);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.equal(cache.getMutationCache().getAll().length, 0);
+    });
+  }
+
   void it("cancels stale reads and completes acknowledgement while scoped refresh is blocked", async () => {
     const { queryClient: cache, trpc } = runtime;
     const options = trpc.transcripts.page.queryOptions(scope, { trpc: { abortOnUnmount: true } });

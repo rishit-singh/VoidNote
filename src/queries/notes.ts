@@ -90,14 +90,17 @@ export async function reconcileNoteSnapshot(
 
   const detailKey = trpc.notes.get.queryKey({ ...scope, id: incoming.id, includeDeleted: false });
   const previous = cache.getQueryData(detailKey);
-  const verified = cache.getQueryData(
-    trpc.notes.get.queryKey({ ...scope, id: incoming.id, includeDeleted: true }),
-  );
+  const verifiedKey = trpc.notes.get.queryKey({ ...scope, id: incoming.id, includeDeleted: true });
+  const verified = cache.getQueryData(verifiedKey);
   const note = [previous, verified].reduce<NoteRecord>(
     (latest, candidate) => (candidate && candidate.revision > latest.revision ? candidate : latest),
     incoming,
   );
   cache.setQueryData(detailKey, note);
+  if (verified) {
+    cache.setQueryData(verifiedKey, note);
+  }
+
   const item = noteListItemSchema.parse(note);
 
   for (const [key, page] of cache.getQueriesData<NotePage>(trpc.notes.list.queryFilter(scope))) {
@@ -117,6 +120,8 @@ export async function reconcileNoteSnapshot(
   // Query observers expose refresh failures. A follow-up read cannot turn a committed
   // command into an uncertain mutation, and must not hold draft acknowledgement open.
   void notifyQueryChange("notes", { ...scope, id: note.id }, runtime, true).catch(() => {});
+
+  return note;
 }
 
 /** Durable intent/optimistic drafts belong to the caller; Query owns acknowledgement caches. */
@@ -140,5 +145,5 @@ export function saveNote(
     }),
   );
 
-  return rpcCall(() => mutation.mutate({ workspaceId, command }));
+  return rpcCall(() => mutation.mutate({ workspaceId, command })).finally(() => mutation.reset());
 }

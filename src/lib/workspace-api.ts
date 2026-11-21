@@ -2,11 +2,11 @@ import { z } from "zod";
 
 import { queryPolicy } from "@/config/query";
 import { type DeleteCommand } from "@/contracts/workspace";
-import { saveNote } from "@/queries/notes";
+import { reconcileNoteSnapshot, saveNote } from "@/queries/notes";
 import { deletePerson, savePerson } from "@/queries/people";
 
 import { ApiError, rpcCall } from "./api-error";
-import { getQueryRuntime, notifyQueryChange } from "./query-runtime";
+import { getQueryRuntime } from "./query-runtime";
 export { ApiError } from "./api-error";
 
 /** Compatibility boundary for durable draft commands; remote reads live in QueryClient. */
@@ -69,25 +69,29 @@ export const workspaceApi = {
     rpcCall(async () => {
       const runtime = getQueryRuntime();
       const note = await runtime.client.notes.delete.mutate({ workspaceId, command });
+      if (runtime !== getQueryRuntime() || runtime.identity?.workspaceId !== workspaceId) {
+        return note;
+      }
+
+      if (note.workspaceId !== workspaceId || note.id !== command.id) {
+        throw new Error("Unexpected deleted record; retry the original command.");
+      }
+
+      await Promise.all([
+        runtime.queryClient.cancelQueries(
+          runtime.trpc.recordings.overview.queryFilter({ workspaceId, noteId: note.id }),
+        ),
+        runtime.queryClient.cancelQueries(
+          runtime.trpc.transcripts.page.queryFilter({ workspaceId, noteId: note.id }),
+        ),
+        runtime.queryClient.cancelQueries(
+          runtime.trpc.transcripts.page.infiniteQueryFilter({ workspaceId, noteId: note.id }),
+        ),
+      ]);
       if (runtime !== getQueryRuntime()) {
         return note;
       }
 
-      await runtime.queryClient.cancelQueries(
-        runtime.trpc.notes.get.queryFilter({ workspaceId, id: note.id }),
-      );
-      await runtime.queryClient.cancelQueries(
-        runtime.trpc.recordings.overview.queryFilter({ workspaceId, noteId: note.id }),
-      );
-      await runtime.queryClient.cancelQueries(
-        runtime.trpc.transcripts.page.queryFilter({ workspaceId, noteId: note.id }),
-      );
-      await runtime.queryClient.cancelQueries(
-        runtime.trpc.transcripts.page.infiniteQueryFilter({ workspaceId, noteId: note.id }),
-      );
-      runtime.queryClient.removeQueries(
-        runtime.trpc.notes.get.queryFilter({ workspaceId, id: note.id }),
-      );
       runtime.queryClient.removeQueries(
         runtime.trpc.recordings.overview.queryFilter({ workspaceId, noteId: note.id }),
       );
@@ -97,7 +101,9 @@ export const workspaceApi = {
       runtime.queryClient.removeQueries(
         runtime.trpc.transcripts.page.infiniteQueryFilter({ workspaceId, noteId: note.id }),
       );
-      await notifyQueryChange("notes", { workspaceId, id: note.id }, runtime);
+      // Retain the versioned tombstone and remove loaded list rows before acknowledging.
+      // Reconciliation owns the detached refresh, so list latency cannot delay deletion.
+      await reconcileNoteSnapshot(note, runtime);
 
       return note;
     }),

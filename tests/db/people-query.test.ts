@@ -69,6 +69,33 @@ void describe("people acknowledgement caches", { concurrency: false }, () => {
     else Reflect.deleteProperty(globalThis, "window");
   });
 
+  for (const deleting of [false, true]) {
+    for (const fails of [false, true]) {
+      void it(`collects completed ${deleting ? "delete" : "save"} mutations after ${fails ? "failure" : "success"}`, async () => {
+        const cache = runtime.queryClient;
+        cache.setDefaultOptions({ ...cache.getDefaultOptions(), mutations: { gcTime: 0 } });
+        const record = deleting ? { ...saved, deletedAt: saved.updatedAt } : saved;
+        globalThis.fetch = () =>
+          fails
+            ? Promise.reject(new Error("Injected failure"))
+            : Promise.resolve(Response.json({ result: { data: record } }));
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const completion = deleting
+            ? deletePerson(identity.workspaceId, {
+                commandId: command.commandId,
+                id: command.id,
+                expectedRevision: 1,
+              })
+            : savePerson(identity.workspaceId, command);
+          if (fails) await assert.rejects(completion, /Injected failure/);
+          else assert.equal((await completion).revision, saved.revision);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        assert.equal(cache.getMutationCache().getAll().length, 0);
+      });
+    }
+  }
+
   void it("cancels stale list reads and acknowledges full content before refresh completes", async () => {
     const { queryClient: cache, trpc } = runtime;
     const options = trpc.people.list.queryOptions(

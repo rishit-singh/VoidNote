@@ -1,6 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
+import { workspaceOverviewSchema } from "@/contracts/workspace-overview";
 import {
   deleteSchema,
   historySchema,
@@ -72,6 +73,12 @@ const targetsInput = runScope
 
 export const appRouter = router({
   workspace: router({
+    overview: procedure
+      .input(scope)
+      .output(workspaceOverviewSchema)
+      .query(({ ctx, input }) =>
+        workspace((repo) => repo.overview(ctx.principal, input.workspaceId)),
+      ),
     session: procedure.output(sessionSchema).query(({ ctx }) =>
       workspace(async (repo) => ({
         user: ctx.principal,

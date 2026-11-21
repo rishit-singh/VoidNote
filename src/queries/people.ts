@@ -118,6 +118,8 @@ export async function reconcilePersonSnapshot(
   }
 
   void notifyQueryChange("people", { ...scope, id: person.id }, runtime, true).catch(() => {});
+
+  return person;
 }
 
 export function savePerson(
@@ -138,7 +140,7 @@ export function savePerson(
     }),
   );
 
-  return rpcCall(() => mutation.mutate({ workspaceId, command }));
+  return rpcCall(() => mutation.mutate({ workspaceId, command })).finally(() => mutation.reset());
 }
 
 export function deletePerson(workspaceId: string, command: DeleteCommand) {
@@ -151,5 +153,5 @@ export function deletePerson(workspaceId: string, command: DeleteCommand) {
     }),
   );
 
-  return rpcCall(() => mutation.mutate({ workspaceId, command }));
+  return rpcCall(() => mutation.mutate({ workspaceId, command })).finally(() => mutation.reset());
 }

@@ -13,6 +13,7 @@ import {
   type QueryRuntime,
 } from "../../src/lib/query-runtime";
 import { reconcileNoteSnapshot, saveNote } from "../../src/queries/notes";
+import { workspaceApi } from "../../src/lib/workspace-api";
 
 type Page = { items: NoteListItem[]; nextCursor: string | null };
 
@@ -65,6 +66,129 @@ void describe("notes acknowledgement caches (no database)", { concurrency: false
     globalThis.fetch = nativeFetch;
     if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
     else Reflect.deleteProperty(globalThis, "window");
+  });
+
+  for (const fails of [false, true]) {
+    void it(`collects completed save mutations after ${fails ? "failure" : "success"}`, async () => {
+      const cache = runtime.queryClient;
+      cache.setDefaultOptions({ ...cache.getDefaultOptions(), mutations: { gcTime: 0 } });
+      if (fails) {
+        globalThis.fetch = () => Promise.reject(new Error("Injected failure"));
+      }
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const completion = saveNote(identity.workspaceId, command);
+        if (fails) await assert.rejects(completion, /Injected failure/);
+        else assert.equal((await completion).revision, saved.revision);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.equal(cache.getMutationCache().getAll().length, 0);
+    });
+  }
+
+  void it("acknowledges deletion with a tombstone while refresh is blocked and clears dependent caches", async () => {
+    const { queryClient: cache, trpc } = runtime;
+    const scope = { workspaceId: identity.workspaceId, id: original.id };
+    const detail = trpc.notes.get.queryKey({ ...scope, includeDeleted: false });
+    const verified = trpc.notes.get.queryKey({ ...scope, includeDeleted: true });
+    const list = trpc.notes.list.queryOptions({ workspaceId: scope.workspaceId, q: "", limit: 30 });
+    const searched = trpc.notes.list.infiniteQueryKey({
+      workspaceId: scope.workspaceId,
+      q: "Before",
+      limit: 30,
+    });
+    const dependentScope = { workspaceId: scope.workspaceId, noteId: original.id };
+    const recording = trpc.recordings.overview.queryKey(dependentScope);
+    const transcriptScope = { ...dependentScope, runId: randomUUID() };
+    const transcript = trpc.transcripts.page.queryKey(transcriptScope);
+    const infiniteTranscript = trpc.transcripts.page.infiniteQueryKey(transcriptScope);
+    cache.setQueryData(detail, original);
+    cache.setQueryData(verified, original);
+    cache.setQueryData(list.queryKey, {
+      items: [noteListItemSchema.parse(original)],
+      nextCursor: null,
+    });
+    cache.setQueryData(searched, {
+      pages: [{ items: [noteListItemSchema.parse(original)], nextCursor: "tail" }],
+      pageParams: [null],
+    });
+    cache.setQueryData(recording, { recordings: [], runs: [] });
+    cache.setQueryData(transcript, { items: [], nextCursor: null });
+    cache.setQueryData(infiniteTranscript, {
+      pages: [{ items: [], nextCursor: null }],
+      pageParams: [null],
+    });
+    const observer = new QueryObserver(cache, list);
+    const unsubscribe = observer.subscribe(() => {});
+    const refresh = deferred<Response>();
+    const tombstone = { ...saved, deletedAt: "2026-11-14T12:00:00.000Z" };
+    globalThis.fetch = (resource) => {
+      const url = resource instanceof Request ? resource.url : resource.toString();
+      return url.includes("notes.delete")
+        ? Promise.resolve(Response.json({ result: { data: tombstone } }))
+        : refresh.promise;
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const deleted = await Promise.race([
+        workspaceApi.deleteNote(scope.workspaceId, {
+          commandId: randomUUID(),
+          id: original.id,
+          expectedRevision: 1,
+        }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Delete waited for refresh")), 1000);
+        }),
+      ]);
+      assert.equal(deleted.deletedAt, tombstone.deletedAt);
+      assert.equal(cache.getQueryData(detail)?.deletedAt, tombstone.deletedAt);
+      assert.equal(cache.getQueryData(verified)?.revision, tombstone.revision);
+      assert.equal(cache.getQueryData(list.queryKey)?.items.length, 0);
+      assert.equal(cache.getQueryData(searched)?.pages[0]?.items.length, 0);
+      assert.equal(cache.getQueryData(searched)?.pages[0]?.nextCursor, "tail");
+      assert.equal(cache.getQueryState(list.queryKey)?.fetchStatus, "fetching");
+      for (const key of [recording, transcript, infiniteTranscript]) {
+        assert.equal(cache.getQueryData(key), undefined);
+      }
+      await reconcileNoteSnapshot(original, runtime);
+      assert.equal(cache.getQueryData(detail)?.revision, tombstone.revision);
+      assert.equal(cache.getQueryData(list.queryKey)?.items.length, 0);
+    } finally {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    }
+  });
+
+  void it("does not publish a deletion into either cache after a scope change during cleanup", async () => {
+    const cache = runtime.queryClient;
+    const cancel = cache.cancelQueries.bind(cache);
+    const started = deferred<void>();
+    const release = deferred<void>();
+    cache.cancelQueries = async (...args) => {
+      await cancel(...args);
+      started.resolve();
+      await release.promise;
+    };
+    globalThis.fetch = () =>
+      Promise.resolve(
+        Response.json({ result: { data: { ...saved, deletedAt: saved.updatedAt } } }),
+      );
+    try {
+      const completion = workspaceApi.deleteNote(identity.workspaceId, {
+        commandId: randomUUID(),
+        id: original.id,
+        expectedRevision: 1,
+      });
+      await started.promise;
+      identity = { ...identity, epoch: 2 };
+      const next = getQueryRuntime();
+      release.resolve();
+      await completion;
+      assert.equal(cache.getQueryCache().getAll().length, 0);
+      assert.equal(next.queryClient.getQueryCache().getAll().length, 0);
+    } finally {
+      release.resolve();
+      cache.cancelQueries = cancel;
+    }
   });
 
   void it("acknowledges before active refresh completes and rejects a cancelled stale list response", async () => {

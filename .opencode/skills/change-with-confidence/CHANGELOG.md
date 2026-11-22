@@ -1,5 +1,17 @@
 # Guidance changes
 
+## 2026-11-22 — Durable reconciliation and shared lock ordering
+
+- Summary foundation review found an exclusive note/run ordering conflict with
+  provider replay, and acknowledged jobs stranded after terminal persistence failed.
+  A follow-up found failed oldest checks starving later jobs.
+- Added shared lock-order verification, active-job recovery and failed-attempt
+  rotation guidance for transactional background-job systems.
+- Verification: deterministic PostgreSQL contention and 11-job fairness regressions
+  in `tests/db/analysis-repository.test.ts`; real-workerd tests with injected
+  persistence failure in `tests/worker/summary-runtime.test.ts`. Actual DO eviction
+  is outside that evidence.
+
 ## 2026-11-20 — Initial-read invalidation
 
 - Home overview review reproduced TanStack Query reusing a pending initial read

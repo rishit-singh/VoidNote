@@ -1,6 +1,15 @@
 import "server-only";
 
 import { z } from "zod";
+import {
+  analysisJobSchema,
+  requestSummarySchema,
+  savedSummarySchema,
+  summaryAcceptedSchema,
+  summaryEvidenceSchema,
+} from "@/contracts/analysis";
+import { createAnalysisRepository } from "@/db/analysis";
+import { analysisPolicy, notifySummaryJob, summaryEvidence } from "@/server/analysis";
 import { workspaceOverviewSchema } from "@/contracts/workspace-overview";
 import {
   deleteSchema,
@@ -47,6 +56,7 @@ function repositoryScope<R>(factory: (db: Database) => R) {
 const workspace = repositoryScope(createWorkspaceRepository);
 const recording = repositoryScope(createRecordingRepository);
 const correction = repositoryScope(createTranscriptCorrectionRepository);
+const analysis = repositoryScope(createAnalysisRepository);
 const scope = z.object({ workspaceId: idSchema });
 const noteScope = scope.extend({ noteId: idSchema });
 const runScope = noteScope.extend({ runId: idSchema });
@@ -72,6 +82,55 @@ const targetsInput = runScope
   );
 
 export const appRouter = router({
+  summaries: router({
+    evidence: procedure
+      .input(scope.extend({ jobId: idSchema }))
+      .output(summaryEvidenceSchema)
+      .query(async ({ ctx, input }) => {
+        const snapshot = await analysis((repo) =>
+          repo.evidence(ctx.principal, input.workspaceId, input.jobId),
+        );
+
+        return summaryEvidence(input.workspaceId, input.jobId, snapshot);
+      }),
+    request: procedure
+      .input(scope.extend({ command: requestSummarySchema }))
+      .output(summaryAcceptedSchema)
+      .mutation(async ({ ctx, input }) => {
+        const policy = analysisPolicy();
+        const job = await analysis((repo) =>
+          repo.request(ctx.principal, input.workspaceId, input.command, policy),
+        );
+        if (policy !== null && job.status === "queued") {
+          notifySummaryJob(input.workspaceId, job.id);
+        }
+        return { job };
+      }),
+    job: procedure
+      .input(scope.extend({ jobId: idSchema }))
+      .output(analysisJobSchema)
+      .query(({ ctx, input }) =>
+        analysis((repo) => repo.get(ctx.principal, input.workspaceId, input.jobId)),
+      ),
+    result: procedure
+      .input(scope.extend({ jobId: idSchema }))
+      .output(z.object({ summary: savedSummarySchema, freshness: z.enum(["current", "stale"]) }))
+      .query(({ ctx, input }) =>
+        analysis((repo) => repo.result(ctx.principal, input.workspaceId, input.jobId)),
+      ),
+    cancel: procedure
+      .input(scope.extend({ jobId: idSchema }))
+      .output(analysisJobSchema)
+      .mutation(async ({ ctx, input }) => {
+        const job = await analysis((repo) =>
+          repo.cancel(ctx.principal, input.workspaceId, input.jobId),
+        );
+        if (job.status === "cancelled") {
+          notifySummaryJob(input.workspaceId, job.id, true);
+        }
+        return job;
+      }),
+  }),
   workspace: router({
     overview: procedure
       .input(scope)

@@ -4,7 +4,7 @@
     "lib": ["ES2024"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["node"],
+    "types": ["node", "./cloudflare-env.d.ts"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -13,5 +13,5 @@
     "esModuleInterop": true,
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["tests/db/**/*.ts"]
+  "include": ["tests/db/**/*.ts", "types/open-next.d.ts"]
 }

@@ -6,8 +6,10 @@ import { compileFunction } from "node:vm";
 import { build } from "esbuild";
 import type { CorrectionResult } from "../../src/contracts/transcript-corrections.ts";
 import type { Principal } from "../../src/contracts/workspace.ts";
+import type { AnalysisJob } from "../../src/contracts/analysis/index.ts";
 
 type Backend = typeof import("../../src/server/trpc/context.ts") &
+  typeof import("../../src/ai/runtime/index.ts") &
   typeof import("../../src/server/trpc/http.ts") &
   typeof import("../../src/server/trpc/router.ts") &
   typeof import("../../src/contracts/workspace.ts") &
@@ -67,6 +69,45 @@ let closed = 0;
 let calls: { method: string; args: unknown[] }[] = [];
 let authenticate: () => Promise<Principal>;
 let repositoryResult: (method: string, args: unknown[]) => unknown;
+let summaryEnabled = true;
+let summaryNotifications: { workspaceId: string; jobId: string; cancel: boolean }[] = [];
+let evidenceReads = 0;
+const summaryJob: AnalysisJob = {
+  id: "116909d2-a678-4b5b-82d1-49e65368f9e9",
+  commandId: "116909d2-a678-4b5b-82d1-49e65368f9e9",
+  noteId,
+  status: "queued",
+  source: {
+    noteId,
+    runId,
+    recordingId: "7a020399-0666-4f7a-944c-05b8d3c14931",
+    generation: 1,
+  },
+  resultId: null,
+  error: null,
+  createdAt: "2026-11-22T00:00:00.000Z",
+  updatedAt: "2026-11-22T00:00:00.000Z",
+};
+const savedEvidence = {
+  snapshotId: summaryJob.id,
+  source: summaryJob.source,
+  passages: [
+    {
+      evidenceId: summaryJob.id,
+      segmentId: summaryJob.id,
+      segmentRevision: 0,
+      attributionRevision: 0,
+      sourceUtteranceId: summaryJob.id,
+      sequence: 0,
+      orderKey: "",
+      providerTrackId: "SPEAKER_00",
+      assignment: { kind: "unassigned" },
+      text: "Send the proposal.",
+      startSeconds: 0,
+      endSeconds: 1,
+    },
+  ],
+};
 const methods = [
   "ensureWorkspace",
   "listNotes",
@@ -149,6 +190,7 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
         export * from './src/server/trpc/context';
         export * from './src/server/trpc/http';
         export * from './src/server/trpc/router';
+        export * from './src/ai/runtime';
         export * from './src/contracts/workspace';
         export { AuthError } from './src/auth/server';
         export { POST as correctionsPOST } from './src/app/api/workspaces/[workspaceId]/notes/[noteId]/processing/[runId]/corrections/route';
@@ -169,6 +211,10 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
               external: true,
             }));
             build.onResolve({ filter: /^@\/server\/recording-api$/ }, (args) => ({
+              path: args.path,
+              external: true,
+            }));
+            build.onResolve({ filter: /^@\/server\/analysis$/ }, (args) => ({
               path: args.path,
               external: true,
             }));
@@ -198,6 +244,39 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
           },
         };
       if (name === "@/db/repository") return { createWorkspaceRepository: () => repository };
+      if (name === "@/db/analysis") {
+        return {
+          createAnalysisRepository: () =>
+            Object.fromEntries(
+              ["request", "get", "result", "cancel", "evidence"].map((method) => [
+                method,
+                async (...args: unknown[]) => {
+                  calls.push({ method: `analysis.${method}`, args });
+                  return await Promise.resolve(repositoryResult(`analysis.${method}`, args));
+                },
+              ]),
+            ),
+        };
+      }
+      if (name === "@/server/analysis") {
+        return {
+          analysisPolicy: () => {
+            if (!summaryEnabled) {
+              return null;
+            }
+            return backend.summaryPolicy("@cf/test/model");
+          },
+          notifySummaryJob: (workspaceId: string, jobId: string, cancel = false) => {
+            summaryNotifications.push({ workspaceId, jobId, cancel });
+          },
+          summaryEvidence: (scope: string, id: string) => {
+            assert.equal(scope, workspaceId);
+            assert.equal(id, summaryJob.id);
+            evidenceReads++;
+            return savedEvidence;
+          },
+        };
+      }
       if (name === "@/db/recording-repository")
         return { createRecordingRepository: () => repository };
       if (name === "@/db/transcript-correction-repository")
@@ -232,6 +311,9 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
   beforeEach(() => {
     authentications = opened = closed = 0;
     calls = [];
+    summaryEnabled = true;
+    summaryNotifications = [];
+    evidenceReads = 0;
     authenticate = () => Promise.resolve(user);
     repositoryResult = (method) =>
       method === "ensureWorkspace"
@@ -266,7 +348,7 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
     url.searchParams.set("batch", "1");
     const response = await handle(new Request(url));
     assert.equal(response.status, 401);
-    const body = (await response.json()) as ErrorBody[];
+    const body = await response.json<ErrorBody[]>();
     assert.equal(body.length, 2);
     assert.ok(body.every((entry) => entry.error.data.domainCode === "unauthorized"));
     assert.equal(authentications, 1);
@@ -277,7 +359,7 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
     for (const headers of [{ origin: "https://evil.test" }, { "sec-fetch-site": "cross-site" }]) {
       const response = await handle(request("notes.delete", { workspaceId }, true, headers));
       assert.equal(response.status, 403);
-      assert.equal(((await response.json()) as ErrorBody).error.data.domainCode, "forbidden");
+      assert.equal((await response.json<ErrorBody>()).error.data.domainCode, "forbidden");
     }
     assert.equal(authentications, 0);
     assert.equal(opened, 0);
@@ -303,13 +385,99 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
     assert.equal(calls.length, 1);
   });
 
+  void it("accepts an authorized summary and only notifies after durable acceptance", async () => {
+    repositoryResult = () => {
+      assert.deepEqual(summaryNotifications, []);
+      return summaryJob;
+    };
+    const command = { commandId: summaryJob.commandId, noteId };
+    const response = await handle(request("summaries.request", { workspaceId, command }, true));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { result: { data: { job: summaryJob } } });
+    assert.deepEqual(calls[0]?.args.slice(0, 3), [user, workspaceId, command]);
+    assert.deepEqual(summaryNotifications, [{ workspaceId, jobId: summaryJob.id, cancel: false }]);
+    assert.equal(opened, closed);
+  });
+
+  void it("replays terminal summary acceptance without restarting inference", async () => {
+    summaryEnabled = false;
+    const failed = { ...summaryJob, status: "failed", error: "Generation interrupted." };
+    repositoryResult = () => failed;
+    const response = await handle(
+      request(
+        "summaries.request",
+        { workspaceId, command: { commandId: summaryJob.commandId, noteId } },
+        true,
+      ),
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { result: { data: { job: failed } } });
+    assert.deepEqual(summaryNotifications, []);
+  });
+
+  void it("fences summary cancellation in persistence before notifying the runtime", async () => {
+    repositoryResult = () => {
+      assert.deepEqual(summaryNotifications, []);
+      return { ...summaryJob, status: "cancelled" };
+    };
+    const response = await handle(
+      request("summaries.cancel", { workspaceId, jobId: summaryJob.id }, true),
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls, [
+      { method: "analysis.cancel", args: [user, workspaceId, summaryJob.id] },
+    ]);
+    assert.deepEqual(summaryNotifications, [{ workspaceId, jobId: summaryJob.id, cancel: true }]);
+  });
+
+  void it("authorizes historical evidence before reading private snapshots", async () => {
+    repositoryResult = () => {
+      assert.equal(evidenceReads, 0);
+      return {};
+    };
+    const input = { workspaceId, jobId: summaryJob.id };
+    const response = await handle(request("summaries.evidence", input));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { result: { data: savedEvidence } });
+    assert.deepEqual(calls[0], {
+      method: "analysis.evidence",
+      args: [user, workspaceId, summaryJob.id],
+    });
+    assert.equal(evidenceReads, 1);
+
+    repositoryResult = () => {
+      throw new backend.WorkspaceError("forbidden", "Workspace access denied.");
+    };
+    assert.equal((await handle(request("summaries.evidence", input))).status, 403);
+    assert.equal(evidenceReads, 1);
+  });
+
+  void it("does not admit summaries without auth, cross-origin permission or enabled policy", async () => {
+    const input = { workspaceId, command: { commandId: summaryJob.commandId, noteId } };
+    const crossOrigin = await handle(
+      request("summaries.request", input, true, { origin: "https://evil.test" }),
+    );
+    assert.equal(crossOrigin.status, 403);
+    authenticate = () => Promise.reject(new backend.AuthError("unauthorized", "Sign in.", 401));
+    assert.equal((await handle(request("summaries.request", input, true))).status, 401);
+    authenticate = () => Promise.resolve(user);
+    summaryEnabled = false;
+    repositoryResult = (_method, args) => {
+      assert.equal(args[3], null);
+      throw new backend.WorkspaceError("conflict", "Summary generation is not enabled.");
+    };
+    assert.equal((await handle(request("summaries.request", input, true))).status, 409);
+    assert.equal(opened, 1);
+    assert.deepEqual(summaryNotifications, []);
+  });
+
   void it("preserves repository conflict metadata and closes failed operations", async () => {
     repositoryResult = () => {
       throw new backend.WorkspaceError("conflict", "Newer correction exists.", 7, [noteId]);
     };
     const response = await handle(request("notes.get", { workspaceId, id: noteId }));
     assert.equal(response.status, 409);
-    const body = (await response.json()) as ErrorBody;
+    const body = await response.json<ErrorBody>();
     assert.equal(body.error.data.code, "CONFLICT");
     assert.equal(body.error.data.domainCode, "conflict");
     assert.equal(body.error.data.currentRevision, 7);
@@ -326,10 +494,7 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
       );
     const unavailable = await handle(request("workspace.session"));
     assert.equal(unavailable.status, 503);
-    assert.equal(
-      ((await unavailable.json()) as ErrorBody).error.data.domainCode,
-      "auth_unavailable",
-    );
+    assert.equal((await unavailable.json<ErrorBody>()).error.data.domainCode, "auth_unavailable");
     authenticate = () => Promise.resolve(user);
     repositoryResult = () => {
       throw new Error("postgres credentials/private query");
@@ -458,7 +623,7 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
     });
     const invalid = await handle(request("transcripts.command", input, true));
     assert.equal(invalid.status, 500);
-    assert.equal(((await invalid.json()) as ErrorBody).error.data.domainCode, "internal_error");
+    assert.equal((await invalid.json<ErrorBody>()).error.data.domainCode, "internal_error");
   });
 
   void it("exposes list metadata without transcript while retaining the full authorized detail", async () => {

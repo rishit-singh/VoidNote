@@ -14,5 +14,5 @@
     "erasableSyntaxOnly": true,
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["tests/worker/**/*.ts", "types/open-next.d.ts"]
+  "include": ["tests/worker/**/*.ts", "tests/proofs/**/*.ts", "types/open-next.d.ts"]
 }

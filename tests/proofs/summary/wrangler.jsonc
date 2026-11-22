@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "voidnote-summary-proof",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "vars": {
+    "SUMMARY_ENABLED": "true",
+    "SUMMARY_MODEL": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+  },
+  "ai": { "binding": "AI", "remote": true },
+  "durable_objects": {
+    "bindings": [{ "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" }],
+  },
+  "migrations": [{ "tag": "summary-proof-v1", "new_sqlite_classes": ["SummaryAgent"] }],
+  "r2_buckets": [
+    { "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-summary-proof-local" },
+  ],
+  "workflows": [
+    {
+      "binding": "SUMMARY_WORKFLOW",
+      "name": "voidnote-summary-proof",
+      "class_name": "SummaryWorkflow",
+    },
+  ],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgresql://voidnote_test:voidnote_test@127.0.0.1:55432/voidnote_summary_proof_test",
+    },
+  ],
+}

@@ -2,9 +2,9 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "incremental": false,
-    "types": ["node"],
+    "types": ["node", "./cloudflare-env.d.ts"],
     "plugins": []
   },
-  "include": ["tests/auth/**/*.ts"],
+  "include": ["tests/auth/**/*.ts", "types/open-next.d.ts"],
   "exclude": ["node_modules"]
 }

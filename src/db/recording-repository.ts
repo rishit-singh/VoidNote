@@ -447,7 +447,13 @@ export function createRecordingRepository(db: Database) {
         }
         await tx
           .update(processingRuns)
-          .set({ status: "succeeded", rawObjectKey, error: null, updatedAt: new Date() })
+          .set({
+            status: "succeeded",
+            rawObjectKey,
+            error: null,
+            transcriptGeneration: sql`${processingRuns.transcriptGeneration} + 1`,
+            updatedAt: new Date(),
+          })
           .where(and(eq(processingRuns.workspaceId, workspaceId), eq(processingRuns.id, runId)));
         await tx
           .insert(recordingEvents)

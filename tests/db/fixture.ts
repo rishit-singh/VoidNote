@@ -56,6 +56,8 @@ export async function teardownDatabase() {
     if (ownsTables) {
       // Only objects created after the empty-database check are ours to remove.
       for (const table of [
+        "note_summaries",
+        "analysis_jobs",
         "transcript_correction_outbox",
         "transcript_sample_candidates",
         "transcript_corrections",

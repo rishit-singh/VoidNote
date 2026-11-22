@@ -77,6 +77,11 @@ Use the relevant checks, rather than mechanically adding state machinery everywh
   or revision must win even when background refresh fails.
   Audit secondary callers and composite operations too: a separate retry coordinator
   must carry replay semantics across every command it owns.
+- **Durable recovery:** reconcile active work after terminal persistence failures,
+  not only unacknowledged dispatch. Bounded scans must rotate failed attempts
+  independently of successful acknowledgement; test a failed batch followed by
+  healthy work. Compare transaction lock modes/order with neighboring operations,
+  including exact replays, and exercise deterministic contention before integration.
 - **Optimism:** show immediate pending feedback without claiming acknowledgement.
   Cancel conflicting reads, update only affected records/pages and reconcile results.
   Background refetch must not hold successful interaction completion open. Roll back

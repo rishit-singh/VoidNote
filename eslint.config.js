@@ -9,6 +9,9 @@ import tseslint from "typescript-eslint";
 
 // Grow this list with each verified domain slice instead of reformatting unrelated work.
 const qualityFiles = [
+  "src/ai/**/*.ts",
+  "src/{contracts,db}/analysis/**/*.ts",
+  "src/server/analysis.ts",
   "src/config/**/*.ts",
   "src/queries/**/*.{ts,tsx}",
   "src/{contracts,server,db,stores}/notes{.ts,/**/*.ts}",
@@ -20,7 +23,7 @@ const qualityFiles = [
 ];
 
 const domainImports = {
-  regex: "^@/(contracts|server|db|queries|stores|components)/(notes|people)/",
+  regex: "^@/(contracts|server|db|queries|stores|components)/(notes|people|analysis)/",
   message: "Import the domain's public entry point; internal files use sibling imports.",
 };
 
@@ -28,7 +31,7 @@ export default defineConfig(
   globalIgnores([
     ".next/**",
     ".open-next/**",
-    ".wrangler/**",
+    "**/.wrangler/**",
     "dist/**",
     "dist-ssr/**",
     "coverage/**",
@@ -90,12 +93,14 @@ export default defineConfig(
                 "@/providers/**",
                 "@/services/**",
                 "@/telemetry/**",
+                "@/ai/**",
                 "**/db/**",
                 "**/auth/**",
                 "**/server/**",
                 "**/providers/**",
                 "**/services/**",
                 "**/telemetry/**",
+                "**/ai/**",
                 "node:*",
                 "assemblyai",
                 "groq-sdk",

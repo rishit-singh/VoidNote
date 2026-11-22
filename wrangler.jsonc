@@ -16,8 +16,20 @@
     "enabled": true,
     "head_sampling_rate": 1,
   },
+  // Explicit opt-in until the migration and bounded provider proof are accepted.
+  "vars": { "SUMMARY_ENABLED": "false", "SUMMARY_MODEL": "" },
+  "ai": { "binding": "AI" },
+  "durable_objects": {
+    "bindings": [{ "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" }],
+  },
+  "migrations": [{ "tag": "summary-agent-v1", "new_sqlite_classes": ["SummaryAgent"] }],
   "r2_buckets": [{ "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-local" }],
   "workflows": [
+    {
+      "binding": "SUMMARY_WORKFLOW",
+      "name": "voidnote-summary-local",
+      "class_name": "SummaryWorkflow",
+    },
     {
       "binding": "PROCESS_RECORDING",
       "name": "voidnote-processing-local",
@@ -30,10 +42,20 @@
       "name": "voidnote-staging",
       "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
       "secrets": { "required": [] },
+      "vars": { "SUMMARY_ENABLED": "false", "SUMMARY_MODEL": "" },
+      "ai": { "binding": "AI" },
+      "durable_objects": {
+        "bindings": [{ "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" }],
+      },
       "r2_buckets": [
         { "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-staging" },
       ],
       "workflows": [
+        {
+          "binding": "SUMMARY_WORKFLOW",
+          "name": "voidnote-summary-staging",
+          "class_name": "SummaryWorkflow",
+        },
         {
           "binding": "PROCESS_RECORDING",
           "name": "voidnote-processing-staging",
@@ -44,10 +66,19 @@
     "production": {
       "name": "voidnote-production",
       "workers_dev": true,
+      "ai": { "binding": "AI" },
+      "durable_objects": {
+        "bindings": [{ "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" }],
+      },
       "r2_buckets": [
         { "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-production" },
       ],
       "workflows": [
+        {
+          "binding": "SUMMARY_WORKFLOW",
+          "name": "voidnote-summary-production",
+          "class_name": "SummaryWorkflow",
+        },
         {
           "binding": "PROCESS_RECORDING",
           "name": "voidnote-processing-production",
@@ -65,6 +96,8 @@
         },
       ],
       "vars": {
+        "SUMMARY_ENABLED": "false",
+        "SUMMARY_MODEL": "",
         "APP_URL": "https://voidnote.app",
         "SUPABASE_URL": "https://rbacdtsvrogopijybsep.supabase.co",
       },

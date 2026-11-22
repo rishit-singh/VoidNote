@@ -296,6 +296,7 @@ export const processingRuns = pgTable(
     config: jsonb("config").$type<{ model: string; transcriptionModel: string }>().notNull(),
     rawObjectKey: text("raw_object_key"),
     correctionsMaterializedAt: time("corrections_materialized_at"),
+    transcriptGeneration: integer("transcript_generation").notNull().default(0),
     error: text("error"),
     createdAt: time("created_at").notNull().defaultNow(),
     updatedAt: time("updated_at").notNull().defaultNow(),
@@ -316,7 +317,91 @@ export const processingRuns = pgTable(
       "processing_runs_status",
       sql`${t.status} in ('queued','submitting','submission_unknown','submitted','running','succeeded','failed','blocked')`,
     ),
+    check("processing_runs_transcript_generation", sql`${t.transcriptGeneration} >= 0`),
     index("processing_runs_note_idx").on(t.workspaceId, t.noteId, t.createdAt.desc()),
+  ],
+).enableRLS();
+
+// A job is also its durable dispatch intent. dispatchedAt records the latest
+// confirmation of its Workflow, not completion. Active jobs stay reconcilable.
+// dispatchCheckedAt rotates attempted checks even when confirmation fails.
+export const analysisJobs = pgTable(
+  "analysis_jobs",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    id: uuid("id").notNull(),
+    commandId: uuid("command_id").notNull(),
+    noteId: uuid("note_id").notNull(),
+    runId: uuid("run_id").notNull(),
+    actorId: uuid("actor_id").notNull(),
+    status: text("status")
+      .$type<import("../contracts/analysis").AnalysisJobStatus>()
+      .notNull()
+      .default("queued"),
+    source: jsonb("source").$type<import("../contracts/analysis").TranscriptVersion>().notNull(),
+    policy: jsonb("policy").$type<import("../ai/runtime").SummaryPolicy>().notNull(),
+    context: jsonb("context").$type<import("../ai/context").ContextReference>(),
+    error: text("error"),
+    dispatchedAt: time("dispatched_at"),
+    dispatchCheckedAt: time("dispatch_checked_at"),
+    createdAt: time("created_at").notNull().defaultNow(),
+    updatedAt: time("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.id] }),
+    unique("analysis_jobs_command").on(t.workspaceId, t.commandId),
+    foreignKey({
+      columns: [t.workspaceId, t.noteId],
+      foreignColumns: [notes.workspaceId, notes.id],
+    }),
+    foreignKey({
+      columns: [t.workspaceId, t.runId],
+      foreignColumns: [processingRuns.workspaceId, processingRuns.id],
+    }),
+    foreignKey({
+      columns: [t.workspaceId, t.actorId],
+      foreignColumns: [workspaceMemberships.workspaceId, workspaceMemberships.userId],
+    }),
+    check(
+      "analysis_jobs_status",
+      sql`${t.status} in ('queued','running','succeeded','failed','cancelled','superseded','blocked')`,
+    ),
+    index("analysis_jobs_dispatch_idx")
+      .on(sql`coalesce(${t.dispatchCheckedAt}, ${t.createdAt})`, t.workspaceId, t.id)
+      .where(sql`${t.status} in ('queued', 'running')`),
+    index("analysis_jobs_note_idx").on(t.workspaceId, t.noteId, t.createdAt.desc()),
+  ],
+).enableRLS();
+
+export const noteSummaries = pgTable(
+  "note_summaries",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    id: uuid("id").notNull(),
+    noteId: uuid("note_id").notNull(),
+    jobId: uuid("job_id").notNull(),
+    version: integer("version").notNull(),
+    snapshotId: uuid("snapshot_id").notNull(),
+    source: jsonb("source").$type<import("../contracts/analysis").TranscriptVersion>().notNull(),
+    analysis: jsonb("analysis").$type<import("../contracts/analysis").SummaryAnalysis>().notNull(),
+    provenance: jsonb("provenance")
+      .$type<import("../contracts/analysis").SummaryProvenance>()
+      .notNull(),
+    createdAt: time("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.id] }),
+    unique("note_summaries_job").on(t.workspaceId, t.jobId),
+    unique("note_summaries_version").on(t.workspaceId, t.noteId, t.version),
+    foreignKey({
+      columns: [t.workspaceId, t.noteId],
+      foreignColumns: [notes.workspaceId, notes.id],
+    }),
+    foreignKey({
+      columns: [t.workspaceId, t.jobId],
+      foreignColumns: [analysisJobs.workspaceId, analysisJobs.id],
+    }),
+    check("note_summaries_version_positive", sql`${t.version} > 0`),
   ],
 ).enableRLS();
 

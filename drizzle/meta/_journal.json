@@ -50,6 +50,27 @@
       "when": 1795051280627,
       "tag": "0006_command_receipt_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795351619302,
+      "tag": "0007_analysis_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795352595887,
+      "tag": "0008_analysis_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795353054024,
+      "tag": "0009_analysis_dispatch_fairness",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1314 @@
+{
+  "fixture": "tests/proofs/summary/fixture.ts",
+  "scope": "Synthetic local Postgres/workerd/R2; remote Workers AI only",
+  "results": [
+    {
+      "job": {
+        "id": "b02c00a1-0000-4000-8000-000000000011",
+        "noteId": "b02c00a1-0000-4000-8000-000000000003",
+        "commandId": "b02c00a1-0000-4000-8000-000000000011",
+        "status": "succeeded",
+        "source": {
+          "noteId": "b02c00a1-0000-4000-8000-000000000003",
+          "recordingId": "b02c00a1-0000-4000-8000-000000000004",
+          "runId": "b02c00a1-0000-4000-8000-000000000005",
+          "generation": 4
+        },
+        "resultId": "b191aa1c-332d-48d2-a3b3-f33e6f1a838d",
+        "error": null,
+        "createdAt": "2026-11-22T16:17:29.890Z",
+        "updatedAt": "2026-11-22T16:18:00.443Z"
+      },
+      "metrics": [
+        {
+          "inputTokens": 6443,
+          "outputTokens": 6696,
+          "model": {
+            "provider": "workersai.chat",
+            "modelId": "@cf/deepseek-ai/deepseek-v4.1-flash-1017"
+          },
+          "stepNumber": 0,
+          "finishReason": "stop",
+          "recordedAt": "2026-11-22T16:18:00.351Z",
+          "totalTokens": 13139,
+          "cacheReadTokens": 0,
+          "reasoningTokens": null,
+          "responseTimeMs": 30131,
+          "stepTimeMs": 30139,
+          "timeToFirstOutputMs": 5036,
+          "toolNames": [
+            "think_final_answer"
+          ]
+        }
+      ],
+      "summary": {
+        "id": "b191aa1c-332d-48d2-a3b3-f33e6f1a838d",
+        "noteId": "b02c00a1-0000-4000-8000-000000000003",
+        "jobId": "b02c00a1-0000-4000-8000-000000000011",
+        "version": 1,
+        "snapshotId": "b02c00a1-0000-4000-8000-000000000011",
+        "source": {
+          "noteId": "b02c00a1-0000-4000-8000-000000000003",
+          "recordingId": "b02c00a1-0000-4000-8000-000000000004",
+          "runId": "b02c00a1-0000-4000-8000-000000000005",
+          "generation": 4
+        },
+        "analysis": {
+          "quickSummary": [
+            {
+              "text": "The group weighed whether the Maple pilot could start Friday. Ada framed the decision and the need for an invitation-draft owner.",
+              "citations": [
+                {
+                  "evidenceId": "5a6d4d31-e6cb-5a2f-bd66-f28b72eb8642",
+                  "quote": "Let's decide whether the Maple pilot can start on Friday. We also need an owner for the invitation draft."
+                }
+              ]
+            },
+            {
+              "text": "Bryn reported an open login retry bug reproducible on slow connections and declined to promise a Friday fix.",
+              "citations": [
+                {
+                  "evidenceId": "ca1add57-a2c3-5ed6-a86d-04e32a9ec36c",
+                  "quote": "The login retry bug is still open. I can reproduce it on slow connections. I cannot promise a fix by Friday."
+                }
+              ]
+            },
+            {
+              "text": "Cleo noted 3 of 5 invited testers confirmed Friday availability, explicitly distinguishing availability from product feedback.",
+              "citations": [
+                {
+                  "evidenceId": "c2ed8c69-b2f6-5410-a2c4-4570a2878d6b",
+                  "quote": "Three of the five invited testers confirmed that they are available Friday. That is availability, not feedback on the product."
+                }
+              ]
+            },
+            {
+              "text": "Ada floated a public launch Friday with a later login patch; Bryn objected, and Cleo agreed public launch should wait.",
+              "citations": [
+                {
+                  "evidenceId": "603b9221-f30b-5798-a0b3-2f51a3ba332a",
+                  "quote": "Then could we launch publicly Friday and patch login afterward?"
+                },
+                {
+                  "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                  "quote": "I object to a public launch with this bug."
+                },
+                {
+                  "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                  "quote": "I agree that public launch should wait."
+                }
+              ]
+            },
+            {
+              "text": "Ada recorded the decision: no public launch Friday; the private pilot is conditional on a successful login check, with Bryn on the check, Cleo on the invitation draft, and Ada reviewing it.",
+              "citations": [
+                {
+                  "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                  "quote": "Decision: no public launch on Friday. The private pilot is conditional on a successful login check. Bryn owns that check; Cleo owns the invitation draft; I will review it."
+                }
+              ]
+            },
+            {
+              "text": "Bryn will report the check outcome Thursday afternoon and said the pilot would be postponed rather than inviting people into a broken session.",
+              "citations": [
+                {
+                  "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                  "quote": "I will report the check outcome on Thursday afternoon."
+                }
+              ]
+            },
+            {
+              "text": "Open items: no agreed new date if postponed, and the budget question was not discussed at all.",
+              "citations": [
+                {
+                  "evidenceId": "5678532c-de22-5983-b22f-f476af8610d8",
+                  "quote": "There is no agreed new date if we postpone."
+                },
+                {
+                  "evidenceId": "a2abd06e-bd04-5286-b7ec-ddd4c1a7e579",
+                  "quote": "The budget question remains unresolved; we did not discuss any amount today."
+                }
+              ]
+            }
+          ],
+          "detailedSummary": [
+            {
+              "text": "Ada opened by setting the decision frame: whether the Maple pilot can start Friday, plus a second item \u2014 finding an owner for the invitation draft.",
+              "citations": [
+                {
+                  "evidenceId": "5a6d4d31-e6cb-5a2f-bd66-f28b72eb8642",
+                  "quote": "Let's decide whether the Maple pilot can start on Friday. We also need an owner for the invitation draft."
+                }
+              ]
+            },
+            {
+              "text": "Bryn raised a blocker: the login retry bug is still open, reproducible on slow connections, and Bryn could not promise a fix by Friday. This is a stated limitation, not a refusal to work on it.",
+              "citations": [
+                {
+                  "evidenceId": "ca1add57-a2c3-5ed6-a86d-04e32a9ec36c",
+                  "quote": "The login retry bug is still open. I can reproduce it on slow connections. I cannot promise a fix by Friday."
+                }
+              ]
+            },
+            {
+              "text": "Cleo supplied tester status: three of five invited testers confirmed Friday availability, and Cleo explicitly cautioned that this is availability, not product feedback.",
+              "citations": [
+                {
+                  "evidenceId": "c2ed8c69-b2f6-5410-a2c4-4570a2878d6b",
+                  "quote": "Three of the five invited testers confirmed that they are available Friday. That is availability, not feedback on the product."
+                }
+              ]
+            },
+            {
+              "text": "Ada proposed an alternative sequencing \u2014 public launch Friday with a login patch afterward \u2014 which Bryn rejected outright.",
+              "citations": [
+                {
+                  "evidenceId": "603b9221-f30b-5798-a0b3-2f51a3ba332a",
+                  "quote": "Then could we launch publicly Friday and patch login afterward?"
+                },
+                {
+                  "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                  "quote": "I object to a public launch with this bug."
+                }
+              ]
+            },
+            {
+              "text": "Bryn offered a partial deliverable: posting a reproduction and a proposed fix by Thursday afternoon, while expressly stating this is not a commitment to a working fix.",
+              "citations": [
+                {
+                  "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                  "quote": "I will post a reproduction and a proposed fix by Thursday afternoon, but that is not a commitment to a working fix."
+                }
+              ]
+            },
+            {
+              "text": "Cleo agreed public launch should wait, volunteered to draft the invitation, named Ada as wording reviewer, and set a send gate: nothing goes out until the login check passes.",
+              "citations": [
+                {
+                  "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                  "quote": "I agree that public launch should wait. I will draft the invitation, and Ada can review the wording. We should not send it until the login check passes."
+                }
+              ]
+            },
+            {
+              "text": "Ada consolidated the decision: no public launch Friday; the private pilot is conditional on a successful login check; Bryn owns the check; Cleo owns the invitation draft; Ada will review it.",
+              "citations": [
+                {
+                  "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                  "quote": "Decision: no public launch on Friday. The private pilot is conditional on a successful login check. Bryn owns that check; Cleo owns the invitation draft; I will review it."
+                }
+              ]
+            },
+            {
+              "text": "Bryn confirmed and set the reporting point at Thursday afternoon, with a stated fallback: if login still fails, postpone rather than invite people into a broken session.",
+              "citations": [
+                {
+                  "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                  "quote": "Yes. I will report the check outcome on Thursday afternoon. If login still fails, we postpone the pilot rather than invite people into a broken session."
+                }
+              ]
+            },
+            {
+              "text": "Cleo flagged two gaps: no agreed new date in the event of postponement, and a caution not to read the two unanswered invitations as negative feedback.",
+              "citations": [
+                {
+                  "evidenceId": "5678532c-de22-5983-b22f-f476af8610d8",
+                  "quote": "There is no agreed new date if we postpone. Also, please do not interpret the two unanswered invitations as negative feedback."
+                }
+              ]
+            },
+            {
+              "text": "Ada closed by naming Thursday afternoon as the next checkpoint and stating the budget question remains unresolved with no amount discussed.",
+              "citations": [
+                {
+                  "evidenceId": "a2abd06e-bd04-5286-b7ec-ddd4c1a7e579",
+                  "quote": "Agreed. Our next checkpoint is Thursday afternoon. The budget question remains unresolved; we did not discuss any amount today."
+                }
+              ]
+            }
+          ],
+          "keywords": [
+            "Maple pilot",
+            "public launch",
+            "login retry bug",
+            "slow connections",
+            "invitation draft",
+            "tester availability",
+            "Thursday checkpoint",
+            "conditional launch",
+            "postponement",
+            "budget unresolved",
+            "private pilot",
+            "login check"
+          ],
+          "decisions": [
+            {
+              "text": "No public launch on Friday.",
+              "citations": [
+                {
+                  "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                  "quote": "Decision: no public launch on Friday."
+                }
+              ]
+            },
+            {
+              "text": "The private pilot is conditional on a successful login check.",
+              "citations": [
+                {
+                  "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                  "quote": "The private pilot is conditional on a successful login check."
+                }
+              ]
+            },
+            {
+              "text": "Ownership assigned: Bryn owns the login check, Cleo owns the invitation draft, Ada reviews it.",
+              "citations": [
+                {
+                  "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                  "quote": "Bryn owns that check; Cleo owns the invitation draft; I will review it."
+                }
+              ]
+            },
+            {
+              "text": "The invitation is not to be sent until the login check passes.",
+              "citations": [
+                {
+                  "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                  "quote": "We should not send it until the login check passes."
+                }
+              ]
+            },
+            {
+              "text": "If login still fails, the pilot is postponed rather than inviting people into a broken session.",
+              "citations": [
+                {
+                  "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                  "quote": "If login still fails, we postpone the pilot rather than invite people into a broken session."
+                }
+              ]
+            },
+            {
+              "text": "Thursday afternoon is the next checkpoint.",
+              "citations": [
+                {
+                  "evidenceId": "a2abd06e-bd04-5286-b7ec-ddd4c1a7e579",
+                  "quote": "Our next checkpoint is Thursday afternoon."
+                }
+              ]
+            }
+          ],
+          "nextSteps": [
+            {
+              "action": {
+                "text": "Post a reproduction and a proposed fix for the login retry bug (explicitly not a commitment to a working fix).",
+                "citations": [
+                  {
+                    "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                    "quote": "I will post a reproduction and a proposed fix by Thursday afternoon, but that is not a commitment to a working fix."
+                  }
+                ]
+              },
+              "ownerPersonId": "b02c00a1-0000-4000-8000-000000000022",
+              "dueDate": "Thursday afternoon"
+            },
+            {
+              "action": {
+                "text": "Perform and report the login check outcome.",
+                "citations": [
+                  {
+                    "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                    "quote": "I will report the check outcome on Thursday afternoon."
+                  },
+                  {
+                    "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                    "quote": "Bryn owns that check"
+                  }
+                ]
+              },
+              "ownerPersonId": "b02c00a1-0000-4000-8000-000000000022",
+              "dueDate": "Thursday afternoon"
+            },
+            {
+              "action": {
+                "text": "Draft the invitation, holding it until the login check passes.",
+                "citations": [
+                  {
+                    "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                    "quote": "I will draft the invitation"
+                  },
+                  {
+                    "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                    "quote": "Cleo owns the invitation draft"
+                  }
+                ]
+              },
+              "ownerPersonId": "b02c00a1-0000-4000-8000-000000000023",
+              "dueDate": null
+            },
+            {
+              "action": {
+                "text": "Review the invitation wording.",
+                "citations": [
+                  {
+                    "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                    "quote": "Ada can review the wording"
+                  },
+                  {
+                    "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                    "quote": "I will review it"
+                  }
+                ]
+              },
+              "ownerPersonId": "b02c00a1-0000-4000-8000-000000000021",
+              "dueDate": null
+            },
+            {
+              "action": {
+                "text": "Resolve the budget question, which was left untouched with no amount discussed.",
+                "citations": [
+                  {
+                    "evidenceId": "a2abd06e-bd04-5286-b7ec-ddd4c1a7e579",
+                    "quote": "The budget question remains unresolved; we did not discuss any amount today."
+                  }
+                ]
+              },
+              "ownerPersonId": null,
+              "dueDate": null
+            },
+            {
+              "action": {
+                "text": "Agree on a new date in case the pilot is postponed (no date currently agreed).",
+                "citations": [
+                  {
+                    "evidenceId": "5678532c-de22-5983-b22f-f476af8610d8",
+                    "quote": "There is no agreed new date if we postpone."
+                  }
+                ]
+              },
+              "ownerPersonId": null,
+              "dueDate": null
+            }
+          ],
+          "keyMoments": [
+            {
+              "title": "Ada frames the pilot decision and the invitation-draft ownership gap",
+              "significance": {
+                "text": "Sets the two things the discussion must resolve: the Friday start and who drafts the invitation.",
+                "citations": [
+                  {
+                    "evidenceId": "5a6d4d31-e6cb-5a2f-bd66-f28b72eb8642",
+                    "quote": "Let's decide whether the Maple pilot can start on Friday. We also need an owner for the invitation draft."
+                  }
+                ]
+              }
+            },
+            {
+              "title": "Bryn surfaces the open login retry bug as a Friday risk",
+              "significance": {
+                "text": "The bug becomes the gating condition for everything that follows; Bryn explicitly withholds a fix commitment.",
+                "citations": [
+                  {
+                    "evidenceId": "ca1add57-a2c3-5ed6-a86d-04e32a9ec36c",
+                    "quote": "The login retry bug is still open. I can reproduce it on slow connections. I cannot promise a fix by Friday."
+                  }
+                ]
+              }
+            },
+            {
+              "title": "Cleo bounds what tester data actually shows",
+              "significance": {
+                "text": "Prevents tester availability from being read as product validation.",
+                "citations": [
+                  {
+                    "evidenceId": "c2ed8c69-b2f6-5410-a2c4-4570a2878d6b",
+                    "quote": "That is availability, not feedback on the product."
+                  }
+                ]
+              }
+            },
+            {
+              "title": "Ada tests launch-then-patch option; Bryn objects",
+              "significance": {
+                "text": "The proposed workaround is rejected, narrowing the options to conditional pilot or postponement.",
+                "citations": [
+                  {
+                    "evidenceId": "603b9221-f30b-5798-a0b3-2f51a3ba332a",
+                    "quote": "Then could we launch publicly Friday and patch login afterward?"
+                  },
+                  {
+                    "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                    "quote": "I object to a public launch with this bug."
+                  }
+                ]
+              }
+            },
+            {
+              "title": "Decision recorded with owners and conditions",
+              "significance": {
+                "text": "The central outcome of the discussion: no public Friday launch, conditional private pilot, named owners.",
+                "citations": [
+                  {
+                    "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                    "quote": "Decision: no public launch on Friday. The private pilot is conditional on a successful login check. Bryn owns that check; Cleo owns the invitation draft; I will review it."
+                  }
+                ]
+              }
+            },
+            {
+              "title": "Postponement fallback and Thursday checkpoint confirmed",
+              "significance": {
+                "text": "Establishes the failure path and the reporting deadline.",
+                "citations": [
+                  {
+                    "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                    "quote": "I will report the check outcome on Thursday afternoon. If login still fails, we postpone the pilot rather than invite people into a broken session."
+                  }
+                ]
+              }
+            },
+            {
+              "title": "Gaps flagged: no fallback date, budget untouched",
+              "significance": {
+                "text": "Explicitly leaves two items unresolved despite the complete decision on launch.",
+                "citations": [
+                  {
+                    "evidenceId": "5678532c-de22-5983-b22f-f476af8610d8",
+                    "quote": "There is no agreed new date if we postpone."
+                  },
+                  {
+                    "evidenceId": "a2abd06e-bd04-5286-b7ec-ddd4c1a7e579",
+                    "quote": "The budget question remains unresolved; we did not discuss any amount today."
+                  }
+                ]
+              }
+            }
+          ],
+          "participants": [
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000021",
+              "providerTrackId": "SPEAKER_00",
+              "contributions": [
+                {
+                  "text": "Opened with the Friday pilot decision and the need for an invitation-draft owner.",
+                  "citations": [
+                    {
+                      "evidenceId": "5a6d4d31-e6cb-5a2f-bd66-f28b72eb8642",
+                      "quote": "Let's decide whether the Maple pilot can start on Friday. We also need an owner for the invitation draft."
+                    }
+                  ]
+                },
+                {
+                  "text": "Proposed public launch Friday with a later login patch.",
+                  "citations": [
+                    {
+                      "evidenceId": "603b9221-f30b-5798-a0b3-2f51a3ba332a",
+                      "quote": "Then could we launch publicly Friday and patch login afterward?"
+                    }
+                  ]
+                },
+                {
+                  "text": "Stated the decision, assigned ownership, and took the review of the invitation.",
+                  "citations": [
+                    {
+                      "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                      "quote": "Decision: no public launch on Friday. The private pilot is conditional on a successful login check. Bryn owns that check; Cleo owns the invitation draft; I will review it."
+                    }
+                  ]
+                },
+                {
+                  "text": "Named the Thursday afternoon checkpoint and noted the budget question was not discussed.",
+                  "citations": [
+                    {
+                      "evidenceId": "a2abd06e-bd04-5286-b7ec-ddd4c1a7e579",
+                      "quote": "Agreed. Our next checkpoint is Thursday afternoon. The budget question remains unresolved; we did not discuss any amount today."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000022",
+              "providerTrackId": "SPEAKER_01",
+              "contributions": [
+                {
+                  "text": "Reported the open login retry bug and could not promise a Friday fix.",
+                  "citations": [
+                    {
+                      "evidenceId": "ca1add57-a2c3-5ed6-a86d-04e32a9ec36c",
+                      "quote": "The login retry bug is still open. I can reproduce it on slow connections. I cannot promise a fix by Friday."
+                    }
+                  ]
+                },
+                {
+                  "text": "Objected to public launch with the bug and offered a repro plus proposed fix by Thursday afternoon, without committing to a working fix.",
+                  "citations": [
+                    {
+                      "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                      "quote": "I object to a public launch with this bug. I will post a reproduction and a proposed fix by Thursday afternoon, but that is not a commitment to a working fix."
+                    }
+                  ]
+                },
+                {
+                  "text": "Accepted ownership of the login check and set the postponement fallback.",
+                  "citations": [
+                    {
+                      "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                      "quote": "Yes. I will report the check outcome on Thursday afternoon. If login still fails, we postpone the pilot rather than invite people into a broken session."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000023",
+              "providerTrackId": "SPEAKER_02",
+              "contributions": [
+                {
+                  "text": "Reported that 3 of 5 invited testers confirmed Friday availability, noting this is not product feedback.",
+                  "citations": [
+                    {
+                      "evidenceId": "c2ed8c69-b2f6-5410-a2c4-4570a2878d6b",
+                      "quote": "Three of the five invited testers confirmed that they are available Friday. That is availability, not feedback on the product."
+                    }
+                  ]
+                },
+                {
+                  "text": "Agreed public launch should wait, volunteered to draft the invitation, named Ada as reviewer, and set the send gate.",
+                  "citations": [
+                    {
+                      "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                      "quote": "I agree that public launch should wait. I will draft the invitation, and Ada can review the wording. We should not send it until the login check passes."
+                    }
+                  ]
+                },
+                {
+                  "text": "Flagged that no new date is agreed if the pilot is postponed and warned against reading unanswered invitations as negative feedback.",
+                  "citations": [
+                    {
+                      "evidenceId": "5678532c-de22-5983-b22f-f476af8610d8",
+                      "quote": "There is no agreed new date if we postpone. Also, please do not interpret the two unanswered invitations as negative feedback."
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "engagement": {
+            "observations": [
+              {
+                "text": "All three participants contributed substantively across the ten passages, each raising a distinct consideration (risk, tester status, ownership).",
+                "citations": [
+                  {
+                    "evidenceId": "ca1add57-a2c3-5ed6-a86d-04e32a9ec36c",
+                    "quote": "The login retry bug is still open."
+                  },
+                  {
+                    "evidenceId": "c2ed8c69-b2f6-5410-a2c4-4570a2878d6b",
+                    "quote": "Three of the five invited testers confirmed that they are available Friday."
+                  },
+                  {
+                    "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                    "quote": "I will draft the invitation, and Ada can review the wording."
+                  }
+                ]
+              },
+              {
+                "text": "Participants challenged and refined each other's positions: Ada's launch-then-patch idea drew an explicit objection from Bryn and agreement-to-wait from Cleo, after which the decision was restated.",
+                "citations": [
+                  {
+                    "evidenceId": "603b9221-f30b-5798-a0b3-2f51a3ba332a",
+                    "quote": "Then could we launch publicly Friday and patch login afterward?"
+                  },
+                  {
+                    "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                    "quote": "I object to a public launch with this bug."
+                  },
+                  {
+                    "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                    "quote": "Decision: no public launch on Friday."
+                  }
+                ]
+              },
+              {
+                "text": "Bryn and Cleo both volunteered concrete follow-up actions with explicit caveats about what their commitments do and do not cover.",
+                "citations": [
+                  {
+                    "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                    "quote": "that is not a commitment to a working fix"
+                  },
+                  {
+                    "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                    "quote": "I will report the check outcome on Thursday afternoon."
+                  }
+                ]
+              }
+            ],
+            "limitations": [
+              "Engagement is assessed only from transcript content; no audio, turn timing beyond timestamps, or nonverbal cues were reviewed.",
+              "Silence or lack of objection by any participant is not treated as agreement.",
+              "Speaker labels are recording-local tracks mapped to person IDs by the snapshot's assignment data."
+            ]
+          },
+          "agendaAssessment": [],
+          "memoryCandidates": [
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000022",
+              "kind": "explicit-statement",
+              "observation": {
+                "text": "Bryn reports the login retry bug is still open and reproducible on slow connections, and cannot promise a fix by Friday.",
+                "citations": [
+                  {
+                    "evidenceId": "ca1add57-a2c3-5ed6-a86d-04e32a9ec36c",
+                    "quote": "The login retry bug is still open. I can reproduce it on slow connections. I cannot promise a fix by Friday."
+                  }
+                ]
+              }
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000022",
+              "kind": "explicit-statement",
+              "observation": {
+                "text": "Bryn objects to public launch while the login bug is open.",
+                "citations": [
+                  {
+                    "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                    "quote": "I object to a public launch with this bug."
+                  }
+                ]
+              }
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000022",
+              "kind": "observed-behavior",
+              "observation": {
+                "text": "Bryn distinguishes delivering a reproduction and proposed fix from committing to a working fix.",
+                "citations": [
+                  {
+                    "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                    "quote": "I will post a reproduction and a proposed fix by Thursday afternoon, but that is not a commitment to a working fix."
+                  }
+                ]
+              }
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000023",
+              "kind": "explicit-statement",
+              "observation": {
+                "text": "Cleo states that three of five invited testers confirmed Friday availability and separates that from product feedback.",
+                "citations": [
+                  {
+                    "evidenceId": "c2ed8c69-b2f6-5410-a2c4-4570a2878d6b",
+                    "quote": "Three of the five invited testers confirmed that they are available Friday. That is availability, not feedback on the product."
+                  }
+                ]
+              }
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000023",
+              "kind": "explicit-statement",
+              "observation": {
+                "text": "Cleo agrees public launch should wait and takes on drafting the invitation with Ada reviewing the wording.",
+                "citations": [
+                  {
+                    "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                    "quote": "I agree that public launch should wait. I will draft the invitation, and Ada can review the wording."
+                  }
+                ]
+              }
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000023",
+              "kind": "observed-behavior",
+              "observation": {
+                "text": "Cleo explicitly cautions against reading unanswered invitations as negative feedback.",
+                "citations": [
+                  {
+                    "evidenceId": "5678532c-de22-5983-b22f-f476af8610d8",
+                    "quote": "please do not interpret the two unanswered invitations as negative feedback"
+                  }
+                ]
+              }
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000021",
+              "kind": "explicit-statement",
+              "observation": {
+                "text": "Ada states the budget question is unresolved and no amount was discussed in this session.",
+                "citations": [
+                  {
+                    "evidenceId": "a2abd06e-bd04-5286-b7ec-ddd4c1a7e579",
+                    "quote": "The budget question remains unresolved; we did not discuss any amount today."
+                  }
+                ]
+              }
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000021",
+              "kind": "observed-behavior",
+              "observation": {
+                "text": "Ada floated a public launch before patching login, which was not adopted after Bryn's objection.",
+                "citations": [
+                  {
+                    "evidenceId": "603b9221-f30b-5798-a0b3-2f51a3ba332a",
+                    "quote": "Then could we launch publicly Friday and patch login afterward?"
+                  }
+                ]
+              }
+            }
+          ],
+          "overlapFindings": [],
+          "uncertainties": [
+            "Agenda and related-conversation context were not supplied; the discussion's agenda coverage cannot be assessed.",
+            "The snapshot does not establish whether Ada's offer to review the invitation was formally accepted by Cleo, though Cleo named Ada as reviewer and Ada restated the arrangement.",
+            "No new pilot date exists if the launch is postponed; who would set it is unstated.",
+            "The budget question is mentioned only as unresolved; no owner or context is established.",
+            "The referenced 'two unanswered invitations' are mentioned only by Cleo; no further detail on those testers is in the snapshot.",
+            "Participant identities rest on snapshot assignment data mapping SPEAKER_00/01/02 tracks to Ada/Bryn/Cleo; display names are not spoken in the transcript.",
+            "No audio was reviewed, so no overlapping speech or attribution ambiguity was detected from the text alone; orderKey fields are empty."
+          ]
+        },
+        "provenance": {
+          "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+          "promptVersion": "summary-v1",
+          "schemaVersion": "summary-v1",
+          "policyVersion": "summary-proof-v1"
+        },
+        "createdAt": "2026-11-22T16:18:00.417Z"
+      },
+      "freshness": "current",
+      "citationValidation": "passed",
+      "sourcePassages": 10,
+      "contextBytes": 6048,
+      "attempt": 1,
+      "elapsedMs": 30678,
+      "estimatedDollars": 0.0099681,
+      "reservedCostUpperBound": 0.0398304,
+      "evidence": "local workerd + isolated PostgreSQL/local R2 + live Workers AI"
+    },
+    {
+      "job": {
+        "id": "b02c00a1-0000-4000-8000-000000000012",
+        "noteId": "b02c00a1-0000-4000-8000-000000000003",
+        "commandId": "b02c00a1-0000-4000-8000-000000000012",
+        "status": "failed",
+        "source": {
+          "noteId": "b02c00a1-0000-4000-8000-000000000003",
+          "recordingId": "b02c00a1-0000-4000-8000-000000000004",
+          "runId": "b02c00a1-0000-4000-8000-000000000005",
+          "generation": 4
+        },
+        "resultId": null,
+        "error": "Summary inference was interrupted and its outcome is uncertain. No automatic model retry was issued.",
+        "createdAt": "2026-11-22T16:21:25.233Z",
+        "updatedAt": "2026-11-22T16:21:54.073Z"
+      },
+      "metrics": [],
+      "attempt": 2,
+      "elapsedMs": 98,
+      "estimatedDollars": null,
+      "reservedCostUpperBound": 0.0398304,
+      "evidence": "local workerd + isolated PostgreSQL/local R2 + live Workers AI"
+    },
+    {
+      "job": {
+        "id": "b02c00a1-0000-4000-8000-000000000013",
+        "noteId": "b02c00a1-0000-4000-8000-000000000003",
+        "commandId": "b02c00a1-0000-4000-8000-000000000013",
+        "status": "succeeded",
+        "source": {
+          "noteId": "b02c00a1-0000-4000-8000-000000000003",
+          "recordingId": "b02c00a1-0000-4000-8000-000000000004",
+          "runId": "b02c00a1-0000-4000-8000-000000000005",
+          "generation": 4
+        },
+        "resultId": "d97f0d47-15d9-4f06-8b0c-9273cd623aef",
+        "error": null,
+        "createdAt": "2026-11-22T16:22:30.494Z",
+        "updatedAt": "2026-11-22T16:22:47.647Z"
+      },
+      "metrics": [
+        {
+          "inputTokens": 6752,
+          "outputTokens": 3884,
+          "model": {
+            "provider": "workersai.chat",
+            "modelId": "@cf/deepseek-ai/deepseek-v4.1-flash-1017"
+          },
+          "proofInstructionVersion": "concise-grounding-v2",
+          "stepNumber": 0,
+          "finishReason": "stop",
+          "recordedAt": "2026-11-22T16:22:47.555Z",
+          "totalTokens": 10636,
+          "cacheReadTokens": 4544,
+          "reasoningTokens": null,
+          "responseTimeMs": 16762,
+          "stepTimeMs": 16769,
+          "timeToFirstOutputMs": 2867,
+          "toolNames": [
+            "think_final_answer"
+          ]
+        }
+      ],
+      "summary": {
+        "id": "d97f0d47-15d9-4f06-8b0c-9273cd623aef",
+        "noteId": "b02c00a1-0000-4000-8000-000000000003",
+        "jobId": "b02c00a1-0000-4000-8000-000000000013",
+        "version": 2,
+        "snapshotId": "b02c00a1-0000-4000-8000-000000000013",
+        "source": {
+          "noteId": "b02c00a1-0000-4000-8000-000000000003",
+          "recordingId": "b02c00a1-0000-4000-8000-000000000004",
+          "runId": "b02c00a1-0000-4000-8000-000000000005",
+          "generation": 4
+        },
+        "analysis": {
+          "quickSummary": [
+            {
+              "text": "Decision: no public launch on Friday; the private pilot is conditional on a successful login check, with Bryn owning that check and Cleo owning the invitation draft (Ada reviews).",
+              "citations": [
+                {
+                  "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                  "quote": "Decision: no public launch on Friday. The private pilot is conditional on a successful login check. Bryn owns that check; Cleo owns the invitation draft; I will review it."
+                }
+              ]
+            },
+            {
+              "text": "If login still fails, the pilot is postponed, and no new date has been agreed.",
+              "citations": [
+                {
+                  "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                  "quote": "If login still fails, we postpone the pilot rather than invite people into a broken session."
+                },
+                {
+                  "evidenceId": "5678532c-de22-5983-b22f-f476af8610d8",
+                  "quote": "There is no agreed new date if we postpone."
+                }
+              ]
+            },
+            {
+              "text": "Next checkpoint is Thursday afternoon; the budget question remains unresolved with no amount discussed.",
+              "citations": [
+                {
+                  "evidenceId": "a2abd06e-bd04-5286-b7ec-ddd4c1a7e579",
+                  "quote": "Our next checkpoint is Thursday afternoon. The budget question remains unresolved; we did not discuss any amount today."
+                }
+              ]
+            }
+          ],
+          "detailedSummary": [
+            {
+              "text": "Ada opened by asking whether the Maple pilot can start Friday and who owns the invitation draft.",
+              "citations": [
+                {
+                  "evidenceId": "5a6d4d31-e6cb-5a2f-bd66-f28b72eb8642",
+                  "quote": "Let's decide whether the Maple pilot can start on Friday. We also need an owner for the invitation draft."
+                }
+              ]
+            },
+            {
+              "text": "Bryn reported the login retry bug is still open, reproducible on slow connections, and declined to promise a fix by Friday; Bryn objected to a public launch with the bug.",
+              "citations": [
+                {
+                  "evidenceId": "ca1add57-a2c3-5ed6-a86d-04e32a9ec36c",
+                  "quote": "The login retry bug is still open. I can reproduce it on slow connections. I cannot promise a fix by Friday."
+                },
+                {
+                  "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                  "quote": "I object to a public launch with this bug."
+                }
+              ]
+            },
+            {
+              "text": "Cleo noted three of five invited testers confirmed Friday availability, explicitly framed as availability rather than product feedback, and agreed public launch should wait.",
+              "citations": [
+                {
+                  "evidenceId": "c2ed8c69-b2f6-5410-a2c4-4570a2878d6b",
+                  "quote": "Three of the five invited testers confirmed that they are available Friday. That is availability, not feedback on the product."
+                },
+                {
+                  "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                  "quote": "I agree that public launch should wait."
+                }
+              ]
+            },
+            {
+              "text": "Outcome: Ada stated the decision (no public launch Friday; private pilot conditional on login check; Bryn owns the check, Cleo the invitation draft, Ada reviews), and invited invitations are not sent until the login check passes. Open items: budget unresolved with no amount discussed, and unanswered invitations should not be read as negative feedback.",
+              "citations": [
+                {
+                  "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                  "quote": "Decision: no public launch on Friday. The private pilot is conditional on a successful login check. Bryn owns that check; Cleo owns the invitation draft; I will review it."
+                },
+                {
+                  "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                  "quote": "We should not send it until the login check passes."
+                },
+                {
+                  "evidenceId": "a2abd06e-bd04-5286-b7ec-ddd4c1a7e579",
+                  "quote": "The budget question remains unresolved; we did not discuss any amount today."
+                },
+                {
+                  "evidenceId": "5678532c-de22-5983-b22f-f476af8610d8",
+                  "quote": "please do not interpret the two unanswered invitations as negative feedback"
+                }
+              ]
+            }
+          ],
+          "keywords": [
+            "Maple pilot",
+            "public launch",
+            "login retry bug",
+            "login check",
+            "invitation draft",
+            "Thursday checkpoint",
+            "postponement",
+            "budget unresolved"
+          ],
+          "decisions": [
+            {
+              "text": "No public launch on Friday.",
+              "citations": [
+                {
+                  "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                  "quote": "Decision: no public launch on Friday."
+                }
+              ]
+            },
+            {
+              "text": "The private pilot is conditional on a successful login check; Bryn owns the check, Cleo owns the invitation draft, and Ada reviews it.",
+              "citations": [
+                {
+                  "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                  "quote": "The private pilot is conditional on a successful login check. Bryn owns that check; Cleo owns the invitation draft; I will review it."
+                }
+              ]
+            },
+            {
+              "text": "Invitations should not be sent until the login check passes.",
+              "citations": [
+                {
+                  "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                  "quote": "We should not send it until the login check passes."
+                }
+              ]
+            },
+            {
+              "text": "If login still fails, the pilot is postponed rather than inviting people into a broken session; no new date was agreed.",
+              "citations": [
+                {
+                  "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                  "quote": "If login still fails, we postpone the pilot rather than invite people into a broken session."
+                },
+                {
+                  "evidenceId": "5678532c-de22-5983-b22f-f476af8610d8",
+                  "quote": "There is no agreed new date if we postpone."
+                }
+              ]
+            }
+          ],
+          "nextSteps": [
+            {
+              "action": {
+                "text": "Bryn will post a reproduction and a proposed fix by Thursday afternoon (not a commitment to a working fix).",
+                "citations": [
+                  {
+                    "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                    "quote": "I will post a reproduction and a proposed fix by Thursday afternoon, but that is not a commitment to a working fix."
+                  }
+                ]
+              },
+              "ownerPersonId": "b02c00a1-0000-4000-8000-000000000022",
+              "dueDate": "Thursday afternoon"
+            },
+            {
+              "action": {
+                "text": "Bryn will report the login check outcome on Thursday afternoon.",
+                "citations": [
+                  {
+                    "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                    "quote": "I will report the check outcome on Thursday afternoon."
+                  }
+                ]
+              },
+              "ownerPersonId": "b02c00a1-0000-4000-8000-000000000022",
+              "dueDate": "Thursday afternoon"
+            },
+            {
+              "action": {
+                "text": "Cleo will draft the invitation, with Ada reviewing the wording.",
+                "citations": [
+                  {
+                    "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                    "quote": "I will draft the invitation, and Ada can review the wording."
+                  },
+                  {
+                    "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                    "quote": "Cleo owns the invitation draft; I will review it."
+                  }
+                ]
+              },
+              "ownerPersonId": "b02c00a1-0000-4000-8000-000000000023",
+              "dueDate": null
+            }
+          ],
+          "keyMoments": [
+            {
+              "title": "Bryn objects to public launch with the open bug",
+              "significance": {
+                "text": "Bryn explicitly objected to a public launch with the login retry bug, limiting launch scope.",
+                "citations": [
+                  {
+                    "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                    "quote": "I object to a public launch with this bug."
+                  }
+                ]
+              }
+            },
+            {
+              "title": "Ada records the final decision and owners",
+              "significance": {
+                "text": "Ada consolidated the outcome: no Friday public launch, conditional private pilot, with Bryn, Cleo and Ada holding named responsibilities.",
+                "citations": [
+                  {
+                    "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                    "quote": "Decision: no public launch on Friday. The private pilot is conditional on a successful login check. Bryn owns that check; Cleo owns the invitation draft; I will review it."
+                  }
+                ]
+              }
+            }
+          ],
+          "participants": [
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000021",
+              "providerTrackId": "SPEAKER_00",
+              "contributions": [
+                {
+                  "text": "Opened the meeting by framing the Friday pilot decision and the need for an invitation-draft owner; asked whether a public launch could proceed with a later login patch.",
+                  "citations": [
+                    {
+                      "evidenceId": "5a6d4d31-e6cb-5a2f-bd66-f28b72eb8642",
+                      "quote": "Let's decide whether the Maple pilot can start on Friday. We also need an owner for the invitation draft."
+                    },
+                    {
+                      "evidenceId": "603b9221-f30b-5798-a0b3-2f51a3ba332a",
+                      "quote": "Then could we launch publicly Friday and patch login afterward?"
+                    }
+                  ]
+                },
+                {
+                  "text": "Stated the decision with owners, and closed by confirming the Thursday afternoon checkpoint and that the budget question is unresolved with no amount discussed.",
+                  "citations": [
+                    {
+                      "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                      "quote": "The private pilot is conditional on a successful login check. Bryn owns that check; Cleo owns the invitation draft; I will review it."
+                    },
+                    {
+                      "evidenceId": "a2abd06e-bd04-5286-b7ec-ddd4c1a7e579",
+                      "quote": "Our next checkpoint is Thursday afternoon. The budget question remains unresolved; we did not discuss any amount today."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000022",
+              "providerTrackId": "SPEAKER_01",
+              "contributions": [
+                {
+                  "text": "Reported the login retry bug is still open and reproducible on slow connections, and declined to promise a fix by Friday.",
+                  "citations": [
+                    {
+                      "evidenceId": "ca1add57-a2c3-5ed6-a86d-04e32a9ec36c",
+                      "quote": "The login retry bug is still open. I can reproduce it on slow connections. I cannot promise a fix by Friday."
+                    }
+                  ]
+                },
+                {
+                  "text": "Objected to public launch with the bug, offered a reproduction and proposed fix by Thursday afternoon, and accepted ownership of the login check outcome report.",
+                  "citations": [
+                    {
+                      "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                      "quote": "I object to a public launch with this bug. I will post a reproduction and a proposed fix by Thursday afternoon"
+                    },
+                    {
+                      "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                      "quote": "I will report the check outcome on Thursday afternoon."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000023",
+              "providerTrackId": "SPEAKER_02",
+              "contributions": [
+                {
+                  "text": "Reported that three of five invited testers confirmed Friday availability, clarifying this is availability rather than product feedback.",
+                  "citations": [
+                    {
+                      "evidenceId": "c2ed8c69-b2f6-5410-a2c4-4570a2878d6b",
+                      "quote": "Three of the five invited testers confirmed that they are available Friday. That is availability, not feedback on the product."
+                    }
+                  ]
+                },
+                {
+                  "text": "Agreed public launch should wait, volunteered to draft the invitation, and noted there is no agreed new date if postponement occurs and that unanswered invitations are not negative feedback.",
+                  "citations": [
+                    {
+                      "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                      "quote": "I agree that public launch should wait. I will draft the invitation"
+                    },
+                    {
+                      "evidenceId": "5678532c-de22-5983-b22f-f476af8610d8",
+                      "quote": "There is no agreed new date if we postpone. Also, please do not interpret the two unanswered invitations as negative feedback."
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "engagement": {
+            "observations": [
+              {
+                "text": "Bryn and Cleo both contributed directly to the launch-scope question, with Bryn objecting to public launch and Cleo agreeing it should wait.",
+                "citations": [
+                  {
+                    "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                    "quote": "I object to a public launch with this bug."
+                  },
+                  {
+                    "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                    "quote": "I agree that public launch should wait."
+                  }
+                ]
+              },
+              {
+                "text": "Bryn and Cleo each volunteered specific tasks (login check reporting and invitation drafting) that Ada consolidated into the final decision.",
+                "citations": [
+                  {
+                    "evidenceId": "d1df1f31-e883-5c86-964e-5c801c39d17c",
+                    "quote": "I will report the check outcome on Thursday afternoon."
+                  },
+                  {
+                    "evidenceId": "1823a0fa-e366-57fd-b85e-afd99ee3c375",
+                    "quote": "I will draft the invitation"
+                  },
+                  {
+                    "evidenceId": "b09b8543-2374-5c45-a55a-f8d5a33eda95",
+                    "quote": "Bryn owns that check; Cleo owns the invitation draft; I will review it."
+                  }
+                ]
+              }
+            ],
+            "limitations": [
+              "Speaker labels are recording-local tracks mapped to person IDs via snapshot assignments; no independent verification of speakers.",
+              "Authored participant descriptions were not used as evidence of what anyone said.",
+              "No agenda or prior conversation context was supplied."
+            ]
+          },
+          "agendaAssessment": [],
+          "memoryCandidates": [
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000022",
+              "kind": "explicit-statement",
+              "observation": {
+                "text": "For this Maple pilot, Bryn said they cannot promise a fix by Friday and that posting a reproduction and proposed fix by Thursday afternoon is not a commitment to a working fix.",
+                "citations": [
+                  {
+                    "evidenceId": "ca1add57-a2c3-5ed6-a86d-04e32a9ec36c",
+                    "quote": "I cannot promise a fix by Friday."
+                  },
+                  {
+                    "evidenceId": "4a428554-d50c-5a69-8dc2-ddb509f9c961",
+                    "quote": "but that is not a commitment to a working fix"
+                  }
+                ]
+              }
+            },
+            {
+              "personId": "b02c00a1-0000-4000-8000-000000000023",
+              "kind": "explicit-statement",
+              "observation": {
+                "text": "In this meeting, Cleo stated that tester availability is not product feedback and that two unanswered invitations should not be interpreted as negative feedback.",
+                "citations": [
+                  {
+                    "evidenceId": "c2ed8c69-b2f6-5410-a2c4-4570a2878d6b",
+                    "quote": "That is availability, not feedback on the product."
+                  },
+                  {
+                    "evidenceId": "5678532c-de22-5983-b22f-f476af8610d8",
+                    "quote": "please do not interpret the two unanswered invitations as negative feedback"
+                  }
+                ]
+              }
+            }
+          ],
+          "overlapFindings": [],
+          "uncertainties": [
+            "No new pilot date was agreed in case of postponement.",
+            "Whether the login check will pass by Thursday afternoon is unknown; Bryn did not commit to a working fix.",
+            "The budget question remains unresolved; no amount was discussed, and no owner or date for it was set.",
+            "The names \"Ada\", \"Bryn\" and \"Cleo\" are tied to speaker tracks only through snapshot assignments; spoken-name attribution for Cleo and Bryn was not independently confirmed."
+          ]
+        },
+        "provenance": {
+          "model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+          "promptVersion": "summary-v1",
+          "schemaVersion": "summary-v1",
+          "policyVersion": "summary-proof-v1"
+        },
+        "createdAt": "2026-11-22T16:22:47.632Z"
+      },
+      "freshness": "current",
+      "citationValidation": "passed",
+      "sourcePassages": 10,
+      "contextBytes": 6048,
+      "attempt": 3,
+      "elapsedMs": 18060,
+      "estimatedDollars": 0.0066863999999999995,
+      "reservedCostUpperBound": 0.0398304,
+      "evidence": "local workerd + isolated PostgreSQL/local R2 + live Workers AI"
+    }
+  ],
+  "reload": {
+    "job": {
+      "id": "b02c00a1-0000-4000-8000-000000000011",
+      "noteId": "b02c00a1-0000-4000-8000-000000000003",
+      "commandId": "b02c00a1-0000-4000-8000-000000000011",
+      "status": "succeeded",
+      "source": {
+        "noteId": "b02c00a1-0000-4000-8000-000000000003",
+        "recordingId": "b02c00a1-0000-4000-8000-000000000004",
+        "runId": "b02c00a1-0000-4000-8000-000000000005",
+        "generation": 4
+      },
+      "resultId": "b191aa1c-332d-48d2-a3b3-f33e6f1a838d",
+      "error": null,
+      "createdAt": "2026-11-22T16:17:29.890Z",
+      "updatedAt": "2026-11-22T16:18:00.443Z"
+    },
+    "metrics": [
+      {
+        "inputTokens": 6443,
+        "outputTokens": 6696,
+        "model": {
+          "provider": "workersai.chat",
+          "modelId": "@cf/deepseek-ai/deepseek-v4.1-flash-1017"
+        },
+        "stepNumber": 0,
+        "finishReason": "stop",
+        "recordedAt": "2026-11-22T16:18:00.351Z",
+        "totalTokens": 13139,
+        "cacheReadTokens": 0,
+        "reasoningTokens": null,
+        "responseTimeMs": 30131,
+        "stepTimeMs": 30139,
+        "timeToFirstOutputMs": 5036,
+        "toolNames": [
+          "think_final_answer"
+        ]
+      }
+    ],
+    "elapsedMs": 268,
+    "citationValidation": "passed"
+  }
+}

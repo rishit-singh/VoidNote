@@ -5,6 +5,8 @@
 - Read the relevant source and current implementation notes before changing behavior.
 - `docs/2026-11-14-recording-ux-reset.md` records the recording-first baseline.
   May documents are historical snapshots, not current architecture requirements.
+- `docs/2026-11-22-summary-agent-foundation.md` records the bounded Think/Workflow
+  proof and its separate provider/product acceptance gates.
 - The delivery roadmap lives at
   `/Users/rishit/.opencode/plan/voidnote/2026-11-13-00-shipping-plan.md` when available.
   Reconcile its status against code and deployment evidence; do not assume it is current.
@@ -32,9 +34,9 @@
   refactors/runtime upgrades. Update the owning canonical skill only when evidence
   warrants it; record material changes in its changelog. Product decisions and
   deployment evidence belong in project instructions and implementation notes.
-- The corrective 02b plan precedes Summary/Ask implementation. Workers AI is the
-  chosen inference platform; runtime/context/memory/tool design still requires user
-  agreement before the separate agent-workflow worktree is bootstrapped.
+- Workers AI, Think and ThinkWorkflow are approved for the bounded summary proof.
+  Keep inference disabled until a model/environment/budget is explicitly selected.
+  Memory writes, overlap auto-application and Ask/tool policies still need agreement.
 
 ## State architecture
 

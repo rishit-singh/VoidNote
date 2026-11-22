@@ -26,6 +26,8 @@ async function teardown() {
   try {
     if (ownsTables) {
       for (const table of [
+        "note_summaries",
+        "analysis_jobs",
         "transcript_correction_outbox",
         "transcript_sample_candidates",
         "transcript_corrections",
@@ -182,6 +184,7 @@ void describe("recording repository / isolated real PostgreSQL", { concurrency: 
   });
   void it("publishes stable timestamped versions atomically without changing manual notes", async () => {
     const { principal, workspaceId, noteId, run } = await readyRun();
+    assert.equal((await repo.execution(workspaceId, run.id)).run.transcriptGeneration, 0);
     await repo.claimSubmission(workspaceId, run.id);
     await repo.bindJob(workspaceId, run.id, randomUUID());
     const turns = Array.from({ length: 102 }, (_, i) => ({
@@ -190,13 +193,20 @@ void describe("recording repository / isolated real PostgreSQL", { concurrency: 
       speaker: "SPEAKER_00",
       text: `Turn ${i}`,
     }));
-    await repo.publish(workspaceId, run.id, "private/raw.json", turns);
+    await Promise.all(
+      Array.from({ length: 5 }, () => repo.publish(workspaceId, run.id, "private/raw.json", turns)),
+    );
+    assert.equal((await repo.execution(workspaceId, run.id)).run.transcriptGeneration, 1);
     const page = await repo.transcript(principal, workspaceId, noteId, run.id, -1);
     assert.equal(page.items.length, 100);
     assert.equal(page.nextCursor, 99);
     const tail = await repo.transcript(principal, workspaceId, noteId, run.id, page.nextCursor);
     assert.equal(tail.items.length, 2);
     await repo.publish(workspaceId, run.id, "private/raw.json", turns);
+    assert.equal((await repo.execution(workspaceId, run.id)).run.transcriptGeneration, 1);
+    const [published] =
+      await sql`select count(*)::int as n from recording_events where workspace_id=${workspaceId} and run_id=${run.id} and kind='transcript.published'`;
+    assert.equal(published?.n, 1);
     assert.deepEqual(await repo.transcript(principal, workspaceId, noteId, run.id, -1), page);
     assert.equal(
       (await workspaceRepo.getNote(principal, workspaceId, noteId)).transcript,
@@ -218,9 +228,14 @@ void describe("recording repository / isolated real PostgreSQL", { concurrency: 
         await sql`select count(*)::int as n from transcript_utterances where run_id=${run.id}`;
       assert.equal(count?.n, 0);
       assert.equal((await repo.execution(workspaceId, run.id)).run.status, "submitted");
+      assert.equal((await repo.execution(workspaceId, run.id)).run.transcriptGeneration, 0);
     } finally {
       await sql`alter table recording_events drop constraint test_publication_failure`;
     }
+    await repo.publish(workspaceId, run.id, "private/raw.json", [
+      { start: 0, end: 1, speaker: "S", text: "Must roll back" },
+    ]);
+    assert.equal((await repo.execution(workspaceId, run.id)).run.transcriptGeneration, 1);
   });
   void it("denies cross-workspace audio, transcript and capability reads and blocks late publication after deletion", async () => {
     const a = await readyRun();
@@ -273,6 +288,7 @@ void describe("recording repository / isolated real PostgreSQL", { concurrency: 
       ]),
       code("conflict"),
     );
+    assert.equal((await repo.execution(workspaceId, run.id)).run.transcriptGeneration, 0);
     await sql`update workspace_memberships set revoked_at=now() where workspace_id=${workspaceId}`;
     await assert.rejects(repo.execution(workspaceId, run.id), code("forbidden"));
   });

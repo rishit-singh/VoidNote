@@ -1013,6 +1013,12 @@ export function createTranscriptCorrectionRepository(db: Database) {
               endSeconds: s.endSeconds,
             })),
           );
+        // Advance once per committed command, independently of its segment count.
+        // Exact receipt replays return above; lazy materialization is unchanged source.
+        await tx
+          .update(processingRuns)
+          .set({ transcriptGeneration: sql`${processingRuns.transcriptGeneration} + 1` })
+          .where(and(eq(processingRuns.workspaceId, workspaceId), eq(processingRuns.id, runId)));
         await tx
           .insert(transcriptCorrectionOutbox)
           .values({ workspaceId, correctionId: saved!.id });

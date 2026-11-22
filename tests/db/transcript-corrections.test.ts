@@ -44,6 +44,8 @@ async function teardown() {
   try {
     if (ownsTables) {
       for (const table of [
+        "note_summaries",
+        "analysis_jobs",
         "transcript_correction_outbox",
         "transcript_sample_candidates",
         "transcript_corrections",
@@ -174,6 +176,13 @@ async function counts(workspaceId: string) {
     (select count(*)::int from transcript_sample_candidates where workspace_id=${workspaceId}) as samples`;
   return row;
 }
+async function generation(state: { workspaceId: string; runId: string }) {
+  const [row] = await sql<
+    { transcript_generation: number }[]
+  >`select transcript_generation from processing_runs where workspace_id=${state.workspaceId} and id=${state.runId}`;
+  assert.ok(row);
+  return row.transcript_generation;
+}
 
 void describe("transcript corrections / isolated real PostgreSQL", { concurrency: false }, () => {
   after(teardown);
@@ -181,6 +190,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
   void it("assigns a selected middle span atomically, replays exactly and undoes all three children", async () => {
     const s = await fixture();
     const original = (await s.page()).items[0]!;
+    assert.equal(await generation(s), 1);
     const command: CorrectionCommand = {
       kind: "split",
       commandId: randomUUID(),
@@ -200,6 +210,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       },
     };
     const receipt = await s.command(command);
+    assert.equal(await generation(s), 2);
     assert.deepEqual(correctionResultSchema.parse(JSON.parse(JSON.stringify(receipt))), receipt);
     assert.equal(receipt.current.complete, true);
     assert.deepEqual(
@@ -210,6 +221,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       { id: original.id, revision: 1, attributionRevision: 1 },
     ]);
     assert.deepEqual(await s.command(command), receipt);
+    assert.equal(await generation(s), 2);
     const children = (await s.page()).items.filter((t) => t.parentId === original.id);
     assert.equal(children.length, 3);
     assert.equal(children.map((t) => t.text).join(""), original.text);
@@ -219,12 +231,14 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     assert.equal(children[2]!.assignment.kind, "unassigned");
     assert.deepEqual(await counts(s.workspaceId), { batches: 1, outbox: 1, samples: 1 });
     await assert.rejects(s.command({ ...command, commandId: randomUUID() }), code("conflict"));
+    assert.equal(await generation(s), 2);
     const undo = await s.command({
       kind: "undo",
       commandId: randomUUID(),
       correctionId: receipt.receipt.id,
     });
     const restored = (await s.page()).items;
+    assert.equal(await generation(s), 3);
     assert.equal(restored.length, 3);
     assert.equal(restored[0]!.id, original.id);
     assert.equal(restored[0]!.text, original.text);
@@ -236,6 +250,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       replay.current.removed,
       children.map(({ id }) => ({ id, revision: 2, attributionRevision: 2 })),
     );
+    assert.equal(await generation(s), 3);
   });
 
   void it("replays immutable receipts with current edits, tombstones and exact-ID coverage after nested splits and undo", async () => {
@@ -431,7 +446,9 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
 
   void it("materializes once, preserves provider originals/overlap and distinguishes manual unknown", async () => {
     const s = await fixture();
+    assert.equal(await generation(s), 1);
     const pages = await Promise.all(Array.from({ length: 4 }, () => s.page()));
+    assert.equal(await generation(s), 1);
     assert.deepEqual(pages[0], pages[1]);
     const initial = correctedTranscriptPageSchema.parse(pages[0]).items;
     assert.equal(initial.length, 3);
@@ -445,6 +462,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       ),
     );
     const saved = await s.command(assign([initial[0]!]));
+    assert.equal(await generation(s), 2);
     const current = (await s.page()).items;
     assert.deepEqual(current[0]!.assignment, { kind: "unknown" });
     assert.equal(current[0]!.assignmentSource, "manual");
@@ -454,6 +472,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       { start: 1, end: 2, speaker: "REPLACED", text: "Late provider response" },
     ]);
     assert.deepEqual((await s.page()).items, current);
+    assert.equal(await generation(s), 2);
     const original = await recordingRepo.transcript(
       s.principal,
       s.workspaceId,
@@ -502,6 +521,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     if (command.kind !== "assign") throw new Error();
     const results = await Promise.all(Array.from({ length: 5 }, () => s.command(command)));
     assert.ok(results.every((r) => r.receipt.id === results[0]!.receipt.id));
+    assert.equal(await generation(s), 2);
     assert.deepEqual(
       await s.command({ ...command, targets: [...command.targets].reverse() }),
       results[0],
@@ -522,6 +542,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     await sql`update workspace_memberships set revoked_at=now() where workspace_id=${s.workspaceId} and user_id=${s.principal.id}`;
     await assert.rejects(s.command(command), code("forbidden"));
     assert.deepEqual(await counts(s.workspaceId), { batches: 1, outbox: 1, samples: 3 });
+    assert.equal(await generation(s), 2);
   });
 
   void it("serializes competing revisions and rejects an entire stale frozen batch", async () => {
@@ -544,6 +565,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     );
     assert.deepEqual(await counts(s.workspaceId), before);
     assert.equal((await s.page()).items[1]!.revision, 0);
+    assert.equal(await generation(s), 2);
   });
 
   void it("serializes reused command IDs across different runs", async () => {
@@ -576,6 +598,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       assert.equal(current.assignment.kind, "unknown");
       assert.equal(current.originalText, original.text);
       assert.equal(current.revision, 1);
+      assert.equal(await generation(s), 2);
     },
   );
 
@@ -695,7 +718,9 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       startSeconds: original.startSeconds,
       endSeconds: original.endSeconds,
     });
+    assert.equal(await generation(s), 2);
     await s.command(assign([original]));
+    assert.equal(await generation(s), 3);
     const current = (await s.page()).items[0]!;
     assert.equal(current.text, "Corrected words only");
     assert.equal(current.assignment.kind, "unknown");
@@ -771,17 +796,25 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       leftId,
       rightId,
     });
-    const undo = await s.command({
+    assert.equal(await generation(s), 2);
+    const undoCommand: CorrectionCommand = {
       kind: "undo",
       commandId: randomUUID(),
       correctionId: split.receipt.id,
-    });
+    };
+    const undo = await s.command(undoCommand);
+    assert.equal(await generation(s), 3);
+    assert.deepEqual(await s.command(undoCommand), undo);
+    assert.equal(await generation(s), 3);
+    await assert.rejects(s.command({ ...undoCommand, commandId: randomUUID() }), code("conflict"));
+    assert.equal(await generation(s), 3);
     assert.equal((await s.page()).items.length, 3);
     const [retired] =
       await sql`select active, revision from transcript_segments where workspace_id=${s.workspaceId} and id=${leftId}`;
     assert.deepEqual(retired, { active: false, revision: 2 });
     // Compensating an undo is safe if no target has changed since it.
     await s.command({ kind: "undo", commandId: randomUUID(), correctionId: undo.receipt.id });
+    assert.equal(await generation(s), 4);
     assert.equal((await s.page()).items[0]!.id, leftId);
     const child = (await s.page()).items[0]!;
     const childLeft = randomUUID();
@@ -796,6 +829,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       leftId: childLeft,
       rightId: childRight,
     });
+    assert.equal(await generation(s), 5);
     const page = await s.page();
     assert.deepEqual(
       page.items.slice(0, 3).map((t) => t.id),
@@ -880,7 +914,7 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
     assert.equal((await s.page()).items[0]!.text, "Newer text must survive");
   });
 
-  void it("rolls back projections, receipts, samples and history on a late outbox failure", async () => {
+  void it("rolls back projections, receipts, samples, history and generation on a late outbox failure", async () => {
     const s = await fixture();
     const initial = await s.page();
     const name = `correction_failure_${randomUUID().replaceAll("-", "")}`;
@@ -895,12 +929,14 @@ void describe("transcript corrections / isolated real PostgreSQL", { concurrency
       await assert.rejects(s.command(command));
       assert.deepEqual(await s.page(), initial);
       assert.deepEqual(await counts(s.workspaceId), { batches: 0, outbox: 0, samples: 0 });
+      assert.equal(await generation(s), 1);
     } finally {
       await sql.unsafe(`drop trigger ${name} on transcript_correction_outbox`);
       await sql.unsafe(`drop function public.${name}()`);
     }
     await s.command(command);
     assert.deepEqual(await counts(s.workspaceId), { batches: 1, outbox: 1, samples: 3 });
+    assert.equal(await generation(s), 2);
   });
 
   void it("scopes all reads/writes and FKs to active workspaces, notes, recordings and people", async () => {

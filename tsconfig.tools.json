@@ -12,7 +12,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true
   },
-  "exclude": ["tests/worker/**", "tests/auth/**", "tests/db/**", "tests/e2e/**"],
+  "exclude": ["tests/worker/**", "tests/proofs/**", "tests/auth/**", "tests/db/**", "tests/e2e/**"],
   "include": [
     "drizzle.config.ts",
     "open-next.config.ts",

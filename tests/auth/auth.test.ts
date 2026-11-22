@@ -228,7 +228,7 @@ void describe("Supabase SSR auth boundary", { concurrency: false }, () => {
       assert.equal(url.pathname, "/auth/v1/otp");
       assert.equal(request.method, "POST");
       assert.equal(url.searchParams.get("redirect_to"), `${appOrigin}/auth/callback`);
-      const body = (await request.json()) as Record<string, unknown>;
+      const body = await request.json<Record<string, unknown>>();
       assert.equal(body.email, user.email);
       assert.equal(body.code_challenge_method, "s256");
       assert.equal(typeof body.code_challenge, "string");
@@ -244,7 +244,7 @@ void describe("Supabase SSR auth boundary", { concurrency: false }, () => {
       const url = new URL(request.url);
       assert.equal(url.pathname, "/auth/v1/token");
       assert.equal(url.searchParams.get("grant_type"), "pkce");
-      const body = (await request.json()) as Record<string, unknown>;
+      const body = await request.json<Record<string, unknown>>();
       assert.equal(body.auth_code, "valid-code");
       assert.ok(body.code_verifier, "exchange must use the persisted verifier cookie");
       return Response.json(session());
@@ -282,7 +282,7 @@ void describe("Supabase SSR auth boundary", { concurrency: false }, () => {
       const started = await auth.signIn(request);
       assert.equal(started.status, 200);
       assertPrivate(started);
-      const payload = (await started.json()) as { url: string };
+      const payload = await started.json<{ url: string }>();
       assert.deepEqual(Object.keys(payload), ["url"]);
       const authorize = new URL(payload.url);
       assert.equal(authorize.origin, supabaseOrigin);
@@ -329,7 +329,7 @@ void describe("Supabase SSR auth boundary", { concurrency: false }, () => {
       const exchangeUrl = new URL(exchange.url);
       assert.equal(exchangeUrl.pathname, "/auth/v1/token");
       assert.equal(exchangeUrl.searchParams.get("grant_type"), "pkce");
-      const body = (await exchange.json()) as Record<string, unknown>;
+      const body = await exchange.json<Record<string, unknown>>();
       assert.equal(body.auth_code, "oauth-code");
       assert.equal(body.code_verifier, verifier);
       assert.ok(jar.has("voidnote-auth"));
@@ -359,7 +359,7 @@ void describe("Supabase SSR auth boundary", { concurrency: false }, () => {
       const response = await auth.signIn(post("/api/auth/sign-in", body));
       assert.equal(response.status, 400, JSON.stringify(body));
       assertPrivate(response);
-      assert.equal(((await response.json()) as { error: string }).error, "invalid_request");
+      assert.equal((await response.json<{ error: string }>()).error, "invalid_request");
       assert.equal(writes.length, 0);
       assert.equal(requests.length, 0);
     }

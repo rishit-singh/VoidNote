@@ -15,8 +15,14 @@ import {
   type ProcessingRun,
 } from "@/contracts/recording-processing";
 import { getQueryRuntime, notifyQueryChange } from "@/lib/query-runtime";
-import { buildRecordingBlob, getRecordingSession, putRecordingSession } from "@/lib/idb-recordings";
+import {
+  buildRecordingBlob,
+  getRecordingSession,
+  pinRecordingInitialization,
+  putRecordingSession,
+} from "@/lib/idb-recordings";
 import { hashRecording, recordingPart } from "@/lib/recording-upload";
+import { recordingDuration } from "@/lib/recording-duration";
 import { useNoteStore } from "@/stores/use-note-store";
 import { isOwnedSession, useRecordingStore } from "@/stores/use-recording-store";
 
@@ -56,38 +62,6 @@ export function recordingOverviewOptions(
         : false,
     },
   );
-}
-
-async function audioDuration(blob: Blob): Promise<number> {
-  const url = URL.createObjectURL(blob);
-  const audio = new Audio();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await new Promise<number>((resolve, reject) => {
-      timer = setTimeout(
-        () => reject(new Error("Could not read this audio. Try another audio format.")),
-        8000,
-      );
-      const check = () => {
-        if (Number.isFinite(audio.duration) && audio.duration > 0) resolve(audio.duration);
-      };
-      audio.onloadedmetadata = () => {
-        check();
-        if (!Number.isFinite(audio.duration)) audio.currentTime = 1e10;
-      };
-      audio.ondurationchange = check;
-      audio.ontimeupdate = check;
-      audio.onerror = () => reject(new Error("This browser cannot decode the audio file."));
-      audio.preload = "metadata";
-      audio.src = url;
-    });
-  } finally {
-    clearTimeout(timer);
-    audio.onloadedmetadata = audio.ondurationchange = audio.ontimeupdate = audio.onerror = null;
-    audio.removeAttribute("src");
-    audio.load();
-    URL.revokeObjectURL(url);
-  }
 }
 
 export type ProcessingRetryObservation = {
@@ -217,7 +191,7 @@ export function queueRecordingProcessing(id: string): Promise<void> {
         }));
     };
     try {
-      const local = await getRecordingSession(id);
+      let local = await getRecordingSession(id);
       if (
         !owned() ||
         local.userId !== account.user.id ||
@@ -238,19 +212,50 @@ export function queueRecordingProcessing(id: string): Promise<void> {
       const blob = await buildRecordingBlob(id, local.mimeType);
       if (!blob.size || blob.size > MAX_RECORDING_BYTES)
         throw new Error(`Choose audio up to ${RECORDING_SIZE_LABEL}.`);
-      const durationSeconds = await audioDuration(blob);
-      if (durationSeconds > MAX_RECORDING_SECONDS)
-        throw new Error("Choose audio up to two hours long.");
-      const sha256 = await hashRecording(blob, check, (fraction) =>
-        report({ progress: `Preparing audio · ${Math.round(fraction * 100)}%` }),
-      );
-      const input = recordingInputSchema.parse({
-        id,
-        sha256,
-        bytes: blob.size,
-        mimeType: (blob.type || local.mimeType).split(";")[0],
-        durationSeconds,
-      });
+      if (!local.initialization) {
+        const sha256 = await hashRecording(blob, check, (fraction) =>
+          report({ progress: `Preparing audio · ${Math.round(fraction * 100)}%` }),
+        );
+        check();
+        // Older manifests may have been accepted remotely before commands were
+        // pinned locally. Recover that exact input rather than changing its timing.
+        const overview = await runtime.queryClient.fetchQuery({
+          ...recordingOverviewOptions(runtime, local.workspaceId, local.noteId),
+          staleTime: 0,
+        });
+        check();
+        const existing = overview.recordings.find((recording) => recording.id === id);
+        const mimeType = recordingInputSchema.shape.mimeType.parse(
+          (blob.type || local.mimeType).split(";")[0],
+        );
+        if (
+          existing &&
+          (existing.sha256 !== sha256 ||
+            existing.bytes !== blob.size ||
+            existing.mimeType !== mimeType)
+        ) {
+          throw new Error("Saved upload metadata does not match the local audio.");
+        }
+        const durationSeconds = existing?.durationSeconds ?? (await recordingDuration(blob, check));
+        if (durationSeconds > MAX_RECORDING_SECONDS)
+          throw new Error("Choose audio up to two hours long.");
+        check();
+        local = await pinRecordingInitialization(id, {
+          id,
+          sha256,
+          bytes: blob.size,
+          mimeType,
+          durationSeconds,
+        });
+        check();
+        useRecordingStore.setState(({ sessions }) => ({
+          sessions: { ...sessions, [id]: local },
+        }));
+      }
+      const input = recordingInputSchema.parse(local.initialization);
+      if (input.id !== id || input.bytes !== blob.size) {
+        throw new Error("Saved upload metadata does not match the local audio.");
+      }
       check();
       const recording = await runtime.client.recordings.initialize.mutate({
         workspaceId: local.workspaceId,

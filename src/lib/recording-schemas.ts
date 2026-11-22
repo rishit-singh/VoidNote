@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { recordingInputSchema } from "@/contracts/recording-processing";
 
 // Ownerless prototype records stay on disk; never adopt them into an account.
 export const recordingSessionSchema = z.object({
@@ -13,6 +14,8 @@ export const recordingSessionSchema = z.object({
   error: z.string().optional(),
   source: z.enum(["microphone", "file"]).optional(),
   processing: z.enum(["pending", "submitted"]).optional(),
+  // Optional for pre-existing manifests; pinned before the first initialization send.
+  initialization: recordingInputSchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

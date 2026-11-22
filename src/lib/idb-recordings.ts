@@ -5,6 +5,7 @@ import {
   type LocalRecordingSession,
 } from "@/lib/recording-schemas";
 import type { RecordingChunkRecord } from "@/lib/types";
+import { recordingInputSchema, type RecordingInput } from "@/contracts/recording-processing";
 
 interface RecordingDB extends DBSchema {
   sessions: { key: string; value: LocalRecordingSession };
@@ -47,6 +48,34 @@ export async function getRecordingSessions() {
 }
 export async function getRecordingSession(id: string) {
   return recordingSessionSchema.parse(await (await openDatabase()).get("sessions", id));
+}
+// First writer wins, including browsers without Web Locks. Never replace an
+// uncertain initialization with metadata from a different decoder or attempt.
+export async function pinRecordingInitialization(sessionId: string, input: RecordingInput) {
+  const command = recordingInputSchema.parse(input);
+  const db = await openDatabase();
+  const tx = db.transaction("sessions", "readwrite");
+  const done = tx.done;
+  try {
+    const session = recordingSessionSchema.parse(await tx.store.get(sessionId));
+    if (session.status !== "finalized" || command.id !== session.id) {
+      throw new Error("Only finalized audio can be prepared for upload.");
+    }
+    const updated = session.initialization
+      ? session
+      : { ...session, initialization: command, updatedAt: new Date().toISOString() };
+    await tx.store.put(updated);
+    await done;
+    return updated;
+  } catch (error) {
+    try {
+      tx.abort();
+    } catch {
+      /* Already aborted. */
+    }
+    await done.catch(() => {});
+    throw error;
+  }
 }
 // Chunk + manifest + transaction completion form a single commit boundary.
 export async function appendRecordingChunk(sessionId: string, blob: Blob) {

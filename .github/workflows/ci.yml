@@ -81,8 +81,8 @@ jobs:
       - name: Validate Worker packaging without deploying
         run: bun run deploy:check
 
-      - name: Install Chromium and system dependencies
-        run: bunx --no-install playwright install --with-deps chromium
+      - name: Install Chromium, WebKit and system dependencies
+        run: bunx --no-install playwright install --with-deps chromium webkit
 
       - name: Test the local Cloudflare production preview
         run: bun run test:e2e

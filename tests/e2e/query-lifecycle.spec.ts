@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, test, workspaceId, type WorkspaceFixture } from "./workspace-fixture";
+import { expect, test, userId, workspaceId, type WorkspaceFixture } from "./workspace-fixture";
 
 // Client-cache regressions using the test-only RPC-to-REST transport bridge.
 // These counts are logical RPC calls, including page.route overrides; they are
@@ -56,6 +56,109 @@ test("note audio, actions, transcript and persistent player share one overview r
   }
   await expectEmptyNoteReady(page, note.title);
   expect(overviewReads).toBe(1);
+  expect(calls(workspace, "recordings.overview", note.id)).toHaveLength(1);
+});
+
+test("new-note overview waits for acknowledgement and preserves newer title edits", async ({
+  page,
+  workspace,
+}) => {
+  let release!: () => void;
+  const pendingSave = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let saving = false;
+  await page.route(`**/api/workspaces/${workspaceId}/notes`, async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    saving = true;
+    await pendingSave;
+    await route.fallback();
+  });
+  let noteId = "";
+  try {
+    await page.goto("/");
+    await page.getByRole("button", { name: "New note", exact: true }).first().click();
+    await expect(page).toHaveURL(/\/notes\/[^/]+$/);
+    noteId = page.url().split("/notes/")[1]!;
+    await expect.poll(() => saving).toBe(true);
+    await expect(page.locator("button").filter({ hasText: /^Upload audio$/ })).toBeDisabled();
+    expect(workspace.notes.has(noteId)).toBe(false);
+    expect(calls(workspace, "recordings.overview", noteId)).toHaveLength(0);
+    await page.getByLabel("Title", { exact: true }).fill("Typed during creation");
+  } finally {
+    release();
+  }
+  await expectEmptyNoteReady(page, "Typed during creation");
+  await expect.poll(() => workspace.notes.get(noteId)?.title).toBe("Typed during creation");
+  await expect(page.getByRole("status").filter({ hasText: /^Saved$/ })).toBeVisible();
+  expect(calls(workspace, "recordings.overview", noteId)).toHaveLength(1);
+});
+
+test("overview waits for delayed current-scope draft recovery before loading a direct link", async ({
+  page,
+  workspace,
+}) => {
+  const note = workspace.seedNote({ title: "Stored title" });
+  await page.addInitScript(
+    ({ key, snapshot }) => localStorage.setItem(key, JSON.stringify(snapshot)),
+    {
+      key: `voidnote:recovery:v1:${userId}:${workspaceId}`,
+      snapshot: {
+        version: 1,
+        state: {
+          userId,
+          workspaceId,
+          entries: [
+            {
+              entity: "note",
+              draft: {
+                id: note.id,
+                title: "Recovered title",
+                transcript: "",
+                createdAt: note.createdAt,
+                updatedAt: note.updatedAt,
+                recordingSessionId: null,
+              },
+              edit: {
+                baseRevision: note.revision,
+                generation: 1,
+                dirty: true,
+                pending: null,
+                conflict: null,
+              },
+            },
+          ],
+        },
+      },
+    },
+  );
+  let release!: () => void;
+  const pendingRecovery = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let recovering = false;
+  await page.route(`**/api/workspaces/${workspaceId}/notes/${note.id}?*`, async (route) => {
+    if (new URL(route.request().url()).searchParams.get("includeDeleted") !== "true")
+      return route.fallback();
+    recovering = true;
+    await pendingRecovery;
+    await route.fallback();
+  });
+  try {
+    await page.goto(`/notes/${note.id}`);
+    await expect.poll(() => recovering).toBe(true);
+    await expect(
+      page.getByRole("status").filter({ hasText: "Recovering saved drafts" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Title", { exact: true })).toHaveValue(note.title);
+    await expect(page.locator("button").filter({ hasText: /^Upload audio$/ })).toBeDisabled();
+    expect(calls(workspace, "recordings.overview", note.id)).toHaveLength(0);
+  } finally {
+    release();
+  }
+  await expectEmptyNoteReady(page, "Recovered title");
+  await expect.poll(() => workspace.notes.get(note.id)?.title).toBe("Recovered title");
+  await expect(page.getByRole("status").filter({ hasText: /^Saved$/ })).toBeVisible();
   expect(calls(workspace, "recordings.overview", note.id)).toHaveLength(1);
 });
 

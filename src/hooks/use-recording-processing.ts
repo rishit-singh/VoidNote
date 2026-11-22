@@ -24,15 +24,32 @@ export interface SelectedProcessingRecording {
 export function useRecordingOverview(noteId?: string, polling = false) {
   const session = useNoteStore((s) => s.session);
   const epoch = useNoteStore((s) => s.epoch);
+  const enabled = useNoteStore((s) => {
+    if (
+      !s.session ||
+      !noteId ||
+      s.recoveryHydration !== "ready" ||
+      s.recoveryEpoch !== s.epoch ||
+      s.unavailable[`note:${noteId}`]
+    )
+      return false;
+    const record = s.noteRecords[noteId];
+    const draft = s.notes.find((note) => note.id === noteId);
+    if (record?.deletedAt || draft?.deletedAt) return false;
+    // Direct links can read remotely; known local creations must be acknowledged first.
+    // The baseline stays acknowledged while newer title edits are still dirty.
+    return !draft || (record?.revision ?? draft.revision ?? 0) > 0;
+  });
   const runtime = getQueryRuntime();
   const key =
     session && noteId
       ? processingJobKey(epoch, session.user.id, session.workspace.id, noteId)
       : undefined;
   const retry = useProcessingJobs((s) => (polling && key ? s.jobs[key]?.retry : undefined));
-  const query = useQuery(
-    recordingOverviewOptions(runtime, session?.workspace.id, noteId, polling, retry),
-  );
+  const query = useQuery({
+    ...recordingOverviewOptions(runtime, session?.workspace.id, noteId, polling, retry),
+    enabled,
+  });
   useEffect(() => {
     if (!polling || !key || !retry) return;
     if (settleProcessingRetryObservation(key, retry, query.data?.runs)) return;

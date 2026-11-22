@@ -72,14 +72,11 @@ test("real microphone capture stops into one player that unloads on unrelated ro
   await page.getByRole("button", { name: "Stop recording", exact: true }).click();
   await expect(page.getByRole("button", { name: "Play audio", exact: true })).toBeEnabled();
   const audio = page.getByTestId("persistent-audio");
-  await expect
-    .poll(() =>
-      audio.evaluate(
-        (element: HTMLAudioElement) => Number.isFinite(element.duration) && element.duration > 0,
-      ),
-    )
-    .toBe(true);
-  await expect(page.getByRole("slider", { name: "Seek audio", exact: true })).toBeEnabled();
+  const seek = page.getByRole("slider", { name: "Seek audio", exact: true });
+  await expect(seek).toBeEnabled();
+  // Headerless Chromium captures may keep native duration at Infinity. The UI
+  // uses parsed container timing without seeking the player to discover its end.
+  await expect.poll(async () => Number(await seek.getAttribute("max"))).toBeGreaterThan(1);
   await audio.evaluate((element) => {
     element.setAttribute("data-integration-owner", "original");
   });

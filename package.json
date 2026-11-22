@@ -64,6 +64,7 @@
     "idb": "^8.0.4",
     "lucide-react": "^0.452.0",
     "motion": "^14.14.0",
+    "music-metadata": "12.8.0",
     "next": "16.4.6",
     "onnxruntime-web": "^1.19.2",
     "postgres": "^3.4.7",

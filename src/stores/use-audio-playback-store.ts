@@ -6,6 +6,7 @@ import type { LocalRecordingSession } from "@/lib/recording-schemas";
 import { withCaptureLock } from "@/lib/recorder";
 import { useNoteStore } from "@/stores/use-note-store";
 import { isOwnedSession, useRecordingStore } from "@/stores/use-recording-store";
+import { recordingContainerDuration } from "@/lib/recording-duration";
 
 type PlaybackOwnerScope = {
   noteId: string;
@@ -45,6 +46,8 @@ interface AudioPlaybackState {
   restoreSelection: () => Promise<void>;
 }
 let element: HTMLAudioElement | null = null;
+// Immutable backing data for the active local URL, released with that source.
+let localPlaybackBlob: Blob | null = null;
 let generation = 0;
 let playAttempt = 0;
 let pendingSeek: { generation: number; url: string; seconds: number } | null = null;
@@ -160,7 +163,7 @@ function applyPendingSeek() {
   )
     return;
   const ranges = player.seekable;
-  const duration = Number.isFinite(player.duration) ? player.duration : null;
+  const duration = Number.isFinite(player.duration) ? player.duration : state.duration;
   if (!ranges.length && duration === null) return;
   const target = Math.max(
     ranges.length ? ranges.start(0) : 0,
@@ -187,7 +190,7 @@ function applyPendingSeek() {
 }
 
 export const useAudioPlaybackStore = create<AudioPlaybackState>((set, get) => {
-  const replaceSource = (owner: PlaybackOwner, url: string, mimeType: string) => {
+  const replaceSource = (owner: PlaybackOwner, url: string, mimeType: string, blob?: Blob) => {
     if (!ownsPlayback(owner)) {
       revokePlaybackUrl(url);
       return;
@@ -195,6 +198,7 @@ export const useAudioPlaybackStore = create<AudioPlaybackState>((set, get) => {
     pendingSeek = null;
     const oldUrl = get().url;
     element?.pause();
+    localPlaybackBlob = blob ?? null;
     set({
       ...emptyPlayback,
       owner,
@@ -277,7 +281,7 @@ export const useAudioPlaybackStore = create<AudioPlaybackState>((set, get) => {
       const owner = localOwner(session, epoch);
       if (!ownsPlayback(owner)) return;
       generation++;
-      replaceSource(owner, URL.createObjectURL(blob), session.mimeType);
+      replaceSource(owner, URL.createObjectURL(blob), session.mimeType, blob);
     },
     loadSession: async (id) => {
       const session = useRecordingStore.getState().sessions[id];
@@ -301,7 +305,7 @@ export const useAudioPlaybackStore = create<AudioPlaybackState>((set, get) => {
           if (request === generation) get().reset();
           return;
         }
-        replaceSource(localOwner(session, epoch), playback.url, session.mimeType);
+        replaceSource(localOwner(session, epoch), playback.url, session.mimeType, playback.blob);
       } catch (error) {
         if (request === generation && useNoteStore.getState().epoch === epoch)
           set({ status: "error", error: message(error) });
@@ -412,6 +416,7 @@ export const useAudioPlaybackStore = create<AudioPlaybackState>((set, get) => {
       }
     },
     reset: () => {
+      localPlaybackBlob = null;
       rangeEnd = null;
       generation++;
       pendingSeek = null;
@@ -432,9 +437,9 @@ export const useAudioPlaybackStore = create<AudioPlaybackState>((set, get) => {
 export function bindAudioPlayback(player: HTMLAudioElement) {
   if (element && element !== player) throw new Error("Mount only one persistent audio player.");
   element = player;
-  let durationProbe: { url: string; restoreTime: number; timer: number } | null = null;
+  let durationProbeUrl: string | null = null;
+  let active = true;
   const sync = () => {
-    if (durationProbe) return;
     const state = useAudioPlaybackStore.getState();
     if (!state.url || !state.owner || player.currentSrc !== state.url) return;
     if (!ownsPlayback(state.owner)) {
@@ -449,7 +454,7 @@ export function bindAudioPlayback(player: HTMLAudioElement) {
     }
     const seekStart = ranges.length ? ranges.start(0) : 0;
     const seekEnd = ranges.length ? ranges.end(ranges.length - 1) : 0;
-    const duration = Number.isFinite(player.duration) ? player.duration : null;
+    const duration = Number.isFinite(player.duration) ? player.duration : state.duration;
     useAudioPlaybackStore.setState({
       currentTime:
         player.readyState >= HTMLMediaElement.HAVE_METADATA && Number.isFinite(player.currentTime)
@@ -457,7 +462,7 @@ export function bindAudioPlayback(player: HTMLAudioElement) {
           : state.currentTime,
       duration,
       seekStart: Number.isFinite(seekStart) ? seekStart : 0,
-      seekEnd: Number.isFinite(seekEnd) ? seekEnd : 0,
+      seekEnd: Number.isFinite(seekEnd) ? seekEnd : (duration ?? 0),
       ...(player.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
         ? {
             status: player.ended
@@ -471,59 +476,50 @@ export function bindAudioPlayback(player: HTMLAudioElement) {
         : {}),
     });
   };
-  const finishProbe = () => {
-    const probe = durationProbe;
-    if (!probe) return;
-    durationProbe = null;
-    window.clearTimeout(probe.timer);
-    if (useAudioPlaybackStore.getState().url !== probe.url || player.currentSrc !== probe.url)
-      return;
-    try {
-      player.currentTime = probe.restoreTime;
-    } catch {
-      /* Keep unknown duration truthful. */
-    }
-    sync();
-  };
   const probeDuration = () => {
     const state = useAudioPlaybackStore.getState();
+    const blob = localPlaybackBlob;
     if (
-      durationProbe ||
+      !blob ||
+      durationProbeUrl === state.url ||
       state.owner?.source !== "local" ||
       !state.url ||
       player.currentSrc !== state.url ||
-      player.duration !== Infinity ||
-      !state.mimeType.includes("webm") ||
-      !player.paused
+      Number.isFinite(player.duration)
     )
       return;
-    // MediaRecorder WebM commonly omits a duration header. Ask the browser's
-    // demuxer to find the end of this finite local Blob, then restore position.
-    // No decoded whole-session buffer, guessed wall-clock duration, or playback.
-    durationProbe = {
-      url: state.url,
-      restoreTime: player.currentTime,
-      timer: window.setTimeout(finishProbe, 2000),
+    const url = state.url;
+    const owner = state.owner;
+    durationProbeUrl = url;
+    const check = () => {
+      if (
+        !active ||
+        localPlaybackBlob !== blob ||
+        useAudioPlaybackStore.getState().url !== url ||
+        player.currentSrc !== url ||
+        !ownsPlayback(owner) ||
+        (Number.isFinite(player.duration) && player.duration > 0)
+      ) {
+        throw new Error("Playback duration parsing is no longer needed.");
+      }
     };
-    useAudioPlaybackStore.setState({ status: "loading" });
-    try {
-      player.currentTime = Number.MAX_SAFE_INTEGER;
-    } catch {
-      finishProbe();
-    }
+    // Headerless recordings need timing, not an out-of-range seek. The parser
+    // never moves the player or prevents ordinary media events/playback.
+    void recordingContainerDuration(blob, check)
+      .then((duration) => {
+        check();
+        if (!Number.isFinite(player.duration)) useAudioPlaybackStore.setState({ duration });
+        sync();
+      })
+      .catch(() => {
+        // Optional timing failure must not turn playable audio into a playback error.
+      });
   };
   const sourceChanged = () => {
-    if (durationProbe && durationProbe.url !== useAudioPlaybackStore.getState().url) {
-      window.clearTimeout(durationProbe.timer);
-      durationProbe = null;
-    }
+    if (durationProbeUrl !== useAudioPlaybackStore.getState().url) durationProbeUrl = null;
   };
   const failed = () => {
     pendingSeek = null;
-    if (durationProbe) {
-      window.clearTimeout(durationProbe.timer);
-      durationProbe = null;
-    }
     const state = useAudioPlaybackStore.getState();
     if (state.url && player.currentSrc === state.url)
       useAudioPlaybackStore.setState({
@@ -549,7 +545,6 @@ export function bindAudioPlayback(player: HTMLAudioElement) {
   events.forEach((event) => player.addEventListener(event, sync));
   player.addEventListener("error", failed);
   player.addEventListener("loadedmetadata", probeDuration);
-  player.addEventListener("seeked", finishProbe);
   player.addEventListener("loadstart", sourceChanged);
   const url = useAudioPlaybackStore.getState().url;
   if (url) {
@@ -557,12 +552,11 @@ export function bindAudioPlayback(player: HTMLAudioElement) {
     player.load();
   }
   return () => {
+    active = false;
     events.forEach((event) => player.removeEventListener(event, sync));
     player.removeEventListener("error", failed);
     player.removeEventListener("loadedmetadata", probeDuration);
-    player.removeEventListener("seeked", finishProbe);
     player.removeEventListener("loadstart", sourceChanged);
-    if (durationProbe) window.clearTimeout(durationProbe.timer);
     if (element === player) {
       useAudioPlaybackStore.getState().reset();
       element = null;

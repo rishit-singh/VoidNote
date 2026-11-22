@@ -19,7 +19,14 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "webkit",
+      testMatch: "upload-compatibility.spec.ts",
+      use: { ...devices["Desktop Safari"] },
+    },
+  ],
   webServer: {
     // build:worker must run first; this serves its output through workerd.
     command: "bun run preview:worker --env production --ip 127.0.0.1 --port 8788",

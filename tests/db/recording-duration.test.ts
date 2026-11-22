@@ -106,7 +106,19 @@ void it("reads headerless WebM timing without an out-of-range duration seek", as
   const duration = await recordingDuration(new Blob([bytes], { type: "audio/webm" }), () => {});
   assert.ok(duration > 14.9 && duration < 15.1);
   assert.equal(seekAttempts, 0);
-  assert.equal(cleared, true);
+  assert.equal(cleared, false);
+});
+
+void it("does not pin WebKit's finite first-cluster estimate for headerless WebM", async () => {
+  playableDuration = 0.341;
+  const bytes = await readFile(new URL("../fixtures/audio/headerless.webm", import.meta.url));
+  const duration = await recordingDuration(
+    new Blob([bytes], { type: "audio/webm;codecs=opus" }),
+    () => {},
+  );
+  assert.ok(duration > 14.9 && duration < 15.1);
+  assert.equal(seekAttempts, 0);
+  assert.equal(cleared, false);
 });
 
 void it("rejects missing timing rather than inventing a positive duration", async () => {

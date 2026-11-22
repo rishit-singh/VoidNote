@@ -38,13 +38,18 @@ key stays stable, title edits do not disable it, and real server 404s remain err
 
 ## Implementation
 
-- Keep browser-derived timing when available. On metadata failure or timeout,
+- Read WebM container timing before initialization: Linux WebKit CI exposed a
+  finite first-cluster estimate (`0.341` seconds for the 15-second fixture).
+  A positive finite native duration is therefore insufficient for that format.
+  Previously pinned or remotely accepted initialization commands remain exact.
+- Keep browser-derived timing for other formats when available. On metadata failure or timeout,
   lazily load pinned `music-metadata@12.8.0` and read container timing without
   requiring a playback decoder. Missing/nonfinite/nonpositive timing is rejected.
 - Bound fallback reads to 32 MiB cumulatively, including rereads, with an 8 MiB
   per-read/allocation cap and 1,024 entries per parsed metadata list. This is an
   input budget, not an exact heap limit. Large scan-heavy files may exceed it;
-  native metadata probing retains the existing 1 GiB/two-hour application limits.
+  native metadata probing for other formats retains the existing 1 GiB/two-hour
+  application limits.
 - Check ownership at read boundaries and after native probing. Latch cancellation
   and budget failures so parser error recovery cannot accept partial results.
 - Persist the exact initialization command in the finalized IndexedDB manifest
@@ -75,10 +80,10 @@ with the fixture. Initialization and processing APIs remain mocked.
 
 ## Verification and delivery
 
-- Eight focused duration tests pass, covering real Ogg timing, preserved browser
+- Nine focused duration tests cover real Ogg timing, preserved browser
   timing, malformed input, native/fallback ownership retirement, and cumulative
   reads across individually valid FLAC comment blocks, plus headerless WebM timing
-  without a duration seek.
+  without a duration seek and rejection of WebKit's finite first-cluster estimate.
 - Built Worker compilation and affected application/tool/database-test/E2E
   TypeScript checks pass. Changed-file ESLint passes with zero warnings.
 - The initial ten compatibility cases passed against the built Worker (five Chromium, five

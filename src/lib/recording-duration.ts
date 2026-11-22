@@ -59,6 +59,12 @@ class MetadataBlob extends Blob {
 /** Playback support varies by browser; container timing does not need a decoder. */
 export async function recordingDuration(blob: Blob, checkActive: () => void): Promise<number> {
   checkActive();
+  // Headerless WebM can expose a finite first-cluster estimate (0.341s for a
+  // 15s recording in Linux WebKit). Finite does not make that timing final.
+  // Read its container timeline before pinning a durable upload command.
+  if (blob.type.split(";")[0] === "audio/webm") {
+    return recordingContainerDuration(blob, checkActive);
+  }
   let nativeDuration: number | undefined;
   try {
     nativeDuration = await mediaDuration(blob);

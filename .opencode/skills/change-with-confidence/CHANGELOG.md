@@ -1,5 +1,14 @@
 # Guidance changes
 
+## 2026-11-22 — Exact command serialization
+
+- Production float output rounded recording duration before a strict equality
+  check, rejecting even a first insert while mocked browser transport passed.
+- Added real database/driver round-trip coverage for exact command comparisons,
+  including fractional values, production formatting and pooled-setting reset.
+- Evidence: `docs/2026-11-22-recording-initialization-precision.md` and the
+  failing-before/passing-after recording-repository regression.
+
 ## 2026-11-20 — Initial-read invalidation
 
 - Home overview review reproduced TanStack Query reusing a pending initial read

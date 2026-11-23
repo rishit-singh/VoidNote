@@ -112,6 +112,10 @@ Use the relevant checks, rather than mechanically adding state machinery everywh
 - Prioritize applicable races: stale read after mutation, late hydration, lost
   response after commit, exact retry, concurrent edit/Undo, infinite-query invalidation,
   pagination seams, account switching and interrupted upload/replay.
+- For exact command comparisons, verify the real database/driver round trip with
+  representative fractional values and production serialization settings. Mocked
+  transport that echoes inputs cannot establish persistence equality; pooled
+  connection settings must be verified across both commit and rollback.
 - Run affected type/lint/format/build checks. For tooling changes verify the
   fix → format → lint cycle is stable. For UI, exercise the actual built application,
   pending/error/recovery states and relevant desktop/mobile interactions.

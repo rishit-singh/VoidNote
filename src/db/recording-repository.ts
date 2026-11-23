@@ -84,6 +84,15 @@ function stableTurnId(runId: string, sequence: number) {
 }
 
 export function createRecordingRepository(db: Database) {
+  const transaction = <T>(work: (tx: Transaction) => Promise<T>) =>
+    db.transaction(async (tx) => {
+      // Duration is part of the immutable initialization command. A database
+      // default of 0 rounds float8 text output and can reject even a fresh insert.
+      // Scope round-trip-safe output to this transaction: Hyperdrive pools and resets
+      // connections, so a startup/session SET cannot establish this invariant.
+      await tx.execute(sql`set local extra_float_digits = 3`);
+      return work(tx);
+    });
   async function ownedRecording(
     tx: Transaction,
     principal: Principal,
@@ -135,7 +144,7 @@ export function createRecordingRepository(db: Database) {
       value: RecordingInput,
     ) {
       const input = recordingInputSchema.parse(value);
-      return db.transaction(async (tx) => {
+      return transaction(async (tx) => {
         await authorizeNote(tx, principal, workspaceId, noteId);
         await tx.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${`${workspaceId}:note-audio:${noteId}`}, 0))`,
@@ -177,10 +186,10 @@ export function createRecordingRepository(db: Database) {
       });
     },
     async getRecording(principal: Principal, workspaceId: string, noteId: string, id: string) {
-      return db.transaction((tx) => ownedRecording(tx, principal, workspaceId, noteId, id));
+      return transaction((tx) => ownedRecording(tx, principal, workspaceId, noteId, id));
     },
     async capabilityRecording(workspaceId: string, noteId: string, id: string) {
-      return db.transaction(async (tx) => {
+      return transaction(async (tx) => {
         const [row] = await tx
           .select()
           .from(recordings)
@@ -203,7 +212,7 @@ export function createRecordingRepository(db: Database) {
       id: string,
       bytes: number,
     ) {
-      return db.transaction(async (tx) => {
+      return transaction(async (tx) => {
         const row = await ownedRecording(tx, principal, workspaceId, noteId, id);
         if (bytes !== row.bytes)
           throw new WorkspaceError("conflict", "Stored audio length differs from the manifest.");
@@ -220,7 +229,7 @@ export function createRecordingRepository(db: Database) {
       });
     },
     async overview(principal: Principal, workspaceId: string, noteId: string) {
-      return db.transaction(async (tx) => {
+      return transaction(async (tx) => {
         await authorizeNote(tx, principal, workspaceId, noteId);
         const audio = await tx
           .select()
@@ -253,7 +262,7 @@ export function createRecordingRepository(db: Database) {
       runId: string,
     ) {
       idSchema.parse(runId);
-      return db.transaction(async (tx) => {
+      return transaction(async (tx) => {
         const recording = await ownedRecording(tx, principal, workspaceId, noteId, recordingId);
         if (recording.status !== "ready")
           throw new WorkspaceError("conflict", "Upload audio before processing.");
@@ -296,7 +305,7 @@ export function createRecordingRepository(db: Database) {
       runId: string,
       after: number,
     ) {
-      return db.transaction(async (tx) => {
+      return transaction(async (tx) => {
         await authorizeNote(tx, principal, workspaceId, noteId);
         const [result] = await tx
           .select({ run: processingRuns })
@@ -356,9 +365,9 @@ export function createRecordingRepository(db: Database) {
         );
     },
     execution: (workspaceId: string, runId: string) =>
-      db.transaction((tx) => execution(tx, workspaceId, runId)),
+      transaction((tx) => execution(tx, workspaceId, runId)),
     async claimSubmission(workspaceId: string, runId: string) {
-      return db.transaction(async (tx) => {
+      return transaction(async (tx) => {
         const state = await execution(tx, workspaceId, runId);
         if (state.run.providerJobId || state.run.status !== "queued")
           return { ...state, submit: false };
@@ -370,7 +379,7 @@ export function createRecordingRepository(db: Database) {
       });
     },
     async bindJob(workspaceId: string, runId: string, jobId: string) {
-      return db.transaction(async (tx) => {
+      return transaction(async (tx) => {
         const { run } = await execution(tx, workspaceId, runId);
         if (run.providerJobId && run.providerJobId !== jobId)
           throw new WorkspaceError("conflict", "Provider job is already bound.");
@@ -387,7 +396,7 @@ export function createRecordingRepository(db: Database) {
       status: ProcessingStatus,
       error: string | null = null,
     ) {
-      await db.transaction(async (tx) => {
+      await transaction(async (tx) => {
         const [current] = await tx
           .select()
           .from(processingRuns)
@@ -412,7 +421,7 @@ export function createRecordingRepository(db: Database) {
       rawObjectKey: string,
       turns: NormalizedTurn[],
     ) {
-      return db.transaction(async (tx) => {
+      return transaction(async (tx) => {
         const { run, recording } = await execution(tx, workspaceId, runId);
         if (run.status === "succeeded") return;
         if (!run.providerJobId)

@@ -15,7 +15,13 @@ import { WorkspaceError } from "../../src/contracts/workspace";
 const url = process.env.TEST_DATABASE_URL;
 if (!url || !/(^|[_-])test($|[_-])/.test(decodeURIComponent(new URL(url).pathname.slice(1))))
   throw new Error("A dedicated empty TEST_DATABASE_URL is required.");
-const sql = postgres(url, { max: 8, prepare: false, connect_timeout: 5 });
+const sql = postgres(url, {
+  max: 8,
+  prepare: false,
+  connect_timeout: 5,
+  // Match production's rounded text output, not PostgreSQL's modern default.
+  connection: { extra_float_digits: "0" },
+});
 const db = drizzle(sql, { schema });
 const repo = createRecordingRepository(db);
 const workspaceRepo = createWorkspaceRepository(db);
@@ -71,14 +77,14 @@ try {
 
 const code = (expected: WorkspaceError["code"]) => (error: unknown) =>
   error instanceof WorkspaceError && error.code === expected;
-async function fixture(initialize = true) {
+async function fixture(initialize = true, title = "Recording note") {
   const principal = { id: randomUUID(), email: null };
   const workspace = await workspaceRepo.ensureWorkspace(principal);
   const note = await workspaceRepo.saveNote(principal, workspace.id, {
     id: randomUUID(),
     commandId: randomUUID(),
     expectedRevision: 0,
-    content: { title: "Recording note", transcript: "Manual text must remain" },
+    content: { title, transcript: "Manual text must remain" },
   });
   const input = {
     id: randomUUID(),
@@ -111,6 +117,83 @@ async function readyRun() {
 
 void describe("recording repository / isolated real PostgreSQL", { concurrency: false }, () => {
   after(teardown);
+  void it("initializes and retries fractional audio for both untitled and renamed notes", async () => {
+    // Use production driver settings and one connection so reset checks inspect
+    // the very same pooled connection after both successful and failed work.
+    const client = postgres(url, {
+      max: 1,
+      prepare: true,
+      fetch_types: false,
+      connect_timeout: 5,
+      connection: { extra_float_digits: "0" },
+    });
+    const precisionRepo = createRecordingRepository(drizzle(client, { schema }));
+    const durationSeconds = 16.136417233560092;
+    try {
+      const [probe] = await client`select ${durationSeconds}::double precision as duration`;
+      assert.notEqual(
+        probe!.duration,
+        durationSeconds,
+        "fixture must reproduce rounded wire output",
+      );
+      for (const title of ["", "Renamed before recording"]) {
+        const { principal, workspaceId, noteId, input } = await fixture(false, "");
+        if (title) {
+          await workspaceRepo.saveNote(principal, workspaceId, {
+            id: noteId,
+            commandId: randomUUID(),
+            expectedRevision: 1,
+            content: { title, transcript: "" },
+          });
+        }
+        const command = { ...input, mimeType: "audio/mp4" as const, durationSeconds };
+        const created = await precisionRepo.initialize(principal, workspaceId, noteId, command);
+        assert.equal(created.durationSeconds, durationSeconds);
+        assert.deepEqual(
+          await precisionRepo.initialize(principal, workspaceId, noteId, command),
+          created,
+        );
+        // Legacy recovery obtains its exact initialization duration from overview.
+        const overview = await precisionRepo.overview(principal, workspaceId, noteId);
+        assert.equal(overview.recordings[0]!.durationSeconds, durationSeconds);
+        assert.equal(
+          (await precisionRepo.getRecording(principal, workspaceId, noteId, command.id))
+            .durationSeconds,
+          durationSeconds,
+        );
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const ready = await precisionRepo.acknowledge(
+            principal,
+            workspaceId,
+            noteId,
+            command.id,
+            command.bytes,
+          );
+          assert.equal(ready.status, "ready");
+          assert.equal(ready.durationSeconds, durationSeconds);
+        }
+        const [afterCommit] =
+          await client`select current_setting('extra_float_digits') as precision`;
+        assert.equal(afterCommit!.precision, "0", "successful transactions must reset the setting");
+        for (const changed of [
+          { sha256: "b".repeat(64) },
+          { bytes: command.bytes + 1 },
+          { mimeType: "audio/webm" as const },
+          { durationSeconds: durationSeconds + 0.000000001 },
+        ]) {
+          await assert.rejects(
+            precisionRepo.initialize(principal, workspaceId, noteId, { ...command, ...changed }),
+            code("conflict"),
+          );
+          const [afterRollback] =
+            await client`select current_setting('extra_float_digits') as precision`;
+          assert.equal(afterRollback!.precision, "0", "failed transactions must reset the setting");
+        }
+      }
+    } finally {
+      await client.end({ timeout: 5 });
+    }
+  });
   void it("allows only one recording per note under concurrent initialization", async () => {
     const { principal, workspaceId, noteId, input } = await fixture(false);
     const attempts = await Promise.allSettled(

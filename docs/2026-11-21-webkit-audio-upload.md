@@ -1,5 +1,8 @@
 # WebKit audio upload compatibility
 
+The subsequent initialization conflict and database-precision correction are
+tracked in [the November 22 follow-up](2026-11-22-recording-initialization-precision.md).
+
 ## Reproduction
 
 A generated two-second Vorbis/Ogg file loads with duration `2` in Chromium but

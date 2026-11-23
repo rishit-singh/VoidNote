@@ -1,5 +1,18 @@
+import { createHash } from "node:crypto";
 import type { Page } from "@playwright/test";
-import { expect, test } from "./workspace-fixture";
+import {
+  recordingInputSchema,
+  type RemoteRecording,
+} from "../../src/contracts/recording-processing";
+import type { LocalRecordingSession } from "../../src/lib/recording-schemas";
+import { expect, test, timestamp, workspaceId } from "./workspace-fixture";
+
+// Native capture needs a worker-scoped launch option; fault tests replace its API.
+test.use({
+  launchOptions: {
+    args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+  },
+});
 
 async function installMicrophone(page: Page, denied = false, holdSession = false) {
   await page.addInitScript(
@@ -132,9 +145,7 @@ async function manifests(page: Page) {
       request.onerror = () => reject(request.error ?? new Error("Unable to read local recordings"));
     });
     try {
-      return await new Promise<
-        Array<{ status: string; chunkCount: number; byteCount: number; noteId: string }>
-      >((resolve, reject) => {
+      return await new Promise<LocalRecordingSession[]>((resolve, reject) => {
         const request = db.transaction("sessions").objectStore("sessions").getAll();
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error ?? new Error("Unable to read manifest"));
@@ -266,16 +277,122 @@ test("storage failure cannot mark a capture ready", async ({ page, workspace }) 
   await expect(page.getByRole("link", { name: "Download audio", exact: true })).toHaveCount(0);
 });
 
-test("new notes are acknowledged before requesting the microphone", async ({ page, workspace }) => {
-  await installMicrophone(page);
-  await page.goto("/");
-  await page.getByRole("button", { name: "New note", exact: true }).first().click();
-  await page.getByRole("button", { name: "Record", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Stop recording", exact: true })).toBeVisible();
-  const id = page.url().split("/notes/")[1];
-  expect(workspace.notes.has(id!)).toBe(true);
-  await page.getByRole("button", { name: "Stop recording", exact: true }).click();
-  await expect.poll(async () => (await manifests(page))[0]?.status).toBe("finalized");
+test.describe("new-note real capture with mocked upload/processing transport", () => {
+  for (const title of ["", "Renamed before recording"]) {
+    test(`${title ? "renamed" : "untitled"} note waits for creation and submits captured audio`, async ({
+      page,
+      workspace,
+    }) => {
+      let noteId = "";
+      const acknowledgedAtMicrophone: boolean[] = [];
+      await page.exposeFunction("observeMicrophoneRequest", () => {
+        acknowledgedAtMicrophone.push(workspace.notes.has(noteId));
+      });
+      await page.addInitScript(() => {
+        const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+          const observe = Reflect.get(window, "observeMicrophoneRequest") as () => Promise<void>;
+          await observe();
+          return getUserMedia(constraints);
+        };
+      });
+
+      let releaseCreate!: () => void;
+      const createGate = new Promise<void>((resolve) => {
+        releaseCreate = resolve;
+      });
+      let creating = false;
+      await page.route(`**/api/workspaces/${workspaceId}/notes`, async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        creating = true;
+        await createGate;
+        await route.fallback();
+      });
+
+      // Native getUserMedia, MediaRecorder, IndexedDB and duration parsing run here.
+      // Only the server transport is mocked; database/provider acceptance is separate.
+      let recording: RemoteRecording | undefined;
+      let uploaded: Buffer | null = null;
+      let submissions = 0;
+      try {
+        await page.goto("/");
+        await page.getByRole("button", { name: "New note", exact: true }).first().click();
+        await expect(page).toHaveURL(/\/notes\/[^/]+$/);
+        noteId = page.url().split("/notes/")[1]!;
+        const root = `/api/workspaces/${workspaceId}/notes/${noteId}`;
+        await page.route(`**${root}/**`, async (route) => {
+          const request = route.request();
+          const path = new URL(request.url()).pathname.slice(root.length);
+          if (path === "/recordings" && request.method() === "GET") {
+            await route.fulfill({ json: { recordings: recording ? [recording] : [], runs: [] } });
+          } else if (path === "/recordings" && request.method() === "POST") {
+            const input = recordingInputSchema.parse(request.postDataJSON());
+            recording = {
+              ...input,
+              workspaceId,
+              noteId,
+              status: "upload_pending",
+              createdAt: timestamp,
+            };
+            await route.fulfill({ json: recording });
+          } else if (
+            recording &&
+            path === `/recordings/${recording.id}/audio` &&
+            request.method() === "PUT"
+          ) {
+            uploaded = request.postDataBuffer();
+            recording.status = "ready";
+            await route.fulfill({ json: recording });
+          } else if (recording && path === "/processing" && request.method() === "POST") {
+            expect(uploaded).not.toBeNull();
+            expect(request.postDataJSON()).toEqual({ id: recording.id, recordingId: recording.id });
+            submissions++;
+            await route.fulfill({
+              json: {
+                id: recording.id,
+                recordingId: recording.id,
+                workspaceId,
+                noteId,
+                status: "queued",
+                providerJobId: null,
+                error: null,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              },
+            });
+          } else await route.fallback();
+        });
+        if (title) await page.getByLabel("Title", { exact: true }).fill(title);
+        await page.getByRole("button", { name: "Record", exact: true }).click();
+        await expect.poll(() => creating).toBe(true);
+        await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
+        expect(workspace.notes.has(noteId)).toBe(false);
+        expect(acknowledgedAtMicrophone).toEqual([]);
+        expect(await manifests(page)).toEqual([]);
+      } finally {
+        releaseCreate();
+      }
+
+      await expect(page.getByRole("button", { name: "Stop recording", exact: true })).toBeVisible();
+      expect(acknowledgedAtMicrophone).toEqual([true]);
+      await expect.poll(() => workspace.notes.get(noteId)?.title).toBe(title);
+      await expect.poll(async () => (await manifests(page))[0]?.chunkCount ?? 0).toBeGreaterThan(0);
+      const [started] = await manifests(page);
+      expect(started?.noteId).toBe(noteId);
+      expect(started?.id).not.toBe(noteId);
+      await page.getByRole("button", { name: "Stop recording", exact: true }).click();
+      await expect.poll(() => submissions).toBe(1);
+      await expect.poll(async () => (await manifests(page))[0]?.processing).toBe("submitted");
+
+      const [finished] = await manifests(page);
+      const input = recordingInputSchema.parse(finished?.initialization);
+      expect(input.id).toBe(started!.id);
+      expect(recording).toMatchObject(input);
+      expect(finished).toMatchObject({ noteId, status: "finalized", byteCount: input.bytes });
+      expect(uploaded!.length).toBe(input.bytes);
+      expect(createHash("sha256").update(uploaded!).digest("hex")).toBe(input.sha256);
+    });
+  }
 });
 
 test("a second tab cannot take over an active microphone", async ({ page, context, workspace }) => {

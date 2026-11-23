@@ -50,6 +50,13 @@
       "when": 1795051280627,
       "tag": "0006_command_receipt_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795051280628,
+      "tag": "0007_note_title_counters",
+      "breakpoints": true
     }
   ]
 }

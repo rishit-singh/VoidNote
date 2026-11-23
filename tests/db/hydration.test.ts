@@ -160,6 +160,83 @@ void describe(
       assert.deepEqual(restored[0]?.edit.pending, saved.edit.pending);
     });
 
+    void it("reads legacy v1 pending notes without inventing title-edit evidence or changing their commands", async () => {
+      const saved = draft();
+      assert.equal(saved.entity, "note");
+      if (saved.entity !== "note" || saved.edit.pending?.kind !== "note") return;
+      saved.draft.title = "";
+      saved.edit.baseRevision = 0;
+      saved.edit.pending.command.expectedRevision = 0;
+      saved.edit.pending.command.content.title = "";
+      const command = structuredClone(saved.edit.pending.command);
+      const key = `voidnote:recovery:v1:${owner.user.id}:${owner.workspace.id}`;
+      values.set(
+        key,
+        JSON.stringify({
+          version: 1,
+          state: { userId: owner.user.id, workspaceId: owner.workspace.id, entries: [saved] },
+        }),
+      );
+      const receipt = { ...record(saved.draft.id), title: "Untitled note (3)" };
+      workspaceApi.note = () => Promise.resolve(receipt);
+      workspaceApi.saveNote = (_workspace, pending, options) => {
+        assert.deepEqual(pending, command);
+        assert.deepEqual(options, { replaying: true });
+        return Promise.resolve(receipt);
+      };
+      await useNoteStore.getState().initialize();
+      const recovered = useNoteStore.getState().edits[`note:${saved.draft.id}`]!;
+      assert.equal(recovered.titleGeneration, undefined);
+      assert.equal(
+        recovered.pending?.kind === "note" && recovered.pending.titleGeneration,
+        undefined,
+      );
+      await useNoteStore.getState().retry("note", saved.draft.id);
+      // Old aggregate generations cannot distinguish transcript-only work from a
+      // title that was typed then cleared. Preserve the ambiguous legacy draft.
+      assert.equal(useNoteStore.getState().notes[0]?.title, "");
+      assert.equal(useNoteStore.getState().edits[`note:${saved.draft.id}`]?.dirty, true);
+    });
+
+    void it("preserves a round-trip title clear made while recovering a pending create", async () => {
+      const saved = draft();
+      if (saved.entity !== "note" || saved.edit.pending?.kind !== "note") return;
+      saved.draft.title = "";
+      saved.edit.baseRevision = 0;
+      saved.edit.generation = 0;
+      saved.edit.titleGeneration = 0;
+      saved.edit.pending.generation = 0;
+      saved.edit.pending.titleGeneration = 0;
+      saved.edit.pending.command.expectedRevision = 0;
+      saved.edit.pending.command.content.title = "";
+      const command = structuredClone(saved.edit.pending.command);
+      workspaceRecovery(owner).write([saved]);
+      const started = deferred<void>();
+      const release = deferred<NoteRecord>();
+      const receipt = { ...record(saved.draft.id), title: "Untitled note (8)" };
+      workspaceApi.note = async (_workspace, id, includeDeleted) => {
+        if (!includeDeleted) return { ...record(id), title: "" };
+        started.resolve();
+        return release.promise;
+      };
+      const hydration = useNoteStore.getState().initialize();
+      await started.promise;
+      await useNoteStore.getState().ensureNote(saved.draft.id);
+      const current = useNoteStore.getState().notes[0]!;
+      useNoteStore.getState().upsertNote({ ...current, title: "Temporary" });
+      useNoteStore.getState().upsertNote({ ...current, title: "" });
+      release.resolve(receipt);
+      await hydration;
+      workspaceApi.saveNote = (_workspace, pending) => {
+        assert.deepEqual(pending, command);
+        return Promise.resolve(receipt);
+      };
+      await useNoteStore.getState().retry("note", saved.draft.id);
+      assert.equal(useNoteStore.getState().notes[0]?.title, "");
+      assert.equal(useNoteStore.getState().edits[`note:${saved.draft.id}`]?.dirty, true);
+      assert.equal(useNoteStore.getState().edits[`note:${saved.draft.id}`]?.titleGeneration, 2);
+    });
+
     void it("bounds concurrent validation and never treats transient validation failure as ready", async () => {
       const entries = Array.from({ length: 9 }, draft);
       workspaceRecovery(owner).write(entries);

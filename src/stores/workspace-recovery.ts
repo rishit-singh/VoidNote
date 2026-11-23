@@ -11,13 +11,21 @@ import {
 
 const generation = z.number().int().nonnegative();
 export const pendingSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("note"), command: saveNoteSchema, generation }),
+  z.object({
+    kind: z.literal("note"),
+    command: saveNoteSchema,
+    generation,
+    titleGeneration: generation.optional(),
+  }),
   z.object({ kind: z.literal("person"), command: savePersonSchema, generation }),
   z.object({ kind: z.literal("delete"), command: deleteSchema, generation }),
 ]);
 const editSchema = z.object({
   baseRevision: generation,
   generation,
+  // Additive v1 metadata. Missing legacy evidence is unknown, not proof that
+  // a title was untouched; new drafts start at zero and new commands capture it.
+  titleGeneration: generation.optional(),
   dirty: z.boolean(),
   pending: pendingSchema.nullable(),
   conflict: generation.nullable(),

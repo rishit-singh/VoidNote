@@ -157,23 +157,23 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
     >
       <div
         inert={signingOut}
-        className="flex h-dvh min-h-dvh w-full overflow-hidden bg-vn-page font-mono text-body text-vn-text [&_:is(a,button,input,textarea):focus-visible]:outline [&_:is(a,button,input,textarea):focus-visible]:outline-2 [&_:is(a,button,input,textarea):focus-visible]:outline-offset-[3px] [&_:is(a,button,input,textarea):focus-visible]:outline-vn-secondary motion-reduce:[&_*]:!scroll-auto motion-reduce:[&_*]:![transition-duration:0.01ms] motion-reduce:[&_*::before]:!scroll-auto motion-reduce:[&_*::before]:![transition-duration:0.01ms] motion-reduce:[&_*::after]:!scroll-auto motion-reduce:[&_*::after]:![transition-duration:0.01ms] [@media(max-width:760px)]:flex-col [@media(max-width:760px)]:overflow-auto"
+        className="flex h-dvh min-h-0 w-full overflow-hidden bg-vn-page font-mono text-body text-vn-text [&_:is(a,button,input,textarea):focus-visible]:outline [&_:is(a,button,input,textarea):focus-visible]:outline-2 [&_:is(a,button,input,textarea):focus-visible]:outline-offset-[3px] [&_:is(a,button,input,textarea):focus-visible]:outline-vn-secondary motion-reduce:[&_*]:!scroll-auto motion-reduce:[&_*]:![transition-duration:0.01ms] motion-reduce:[&_*::before]:!scroll-auto motion-reduce:[&_*::before]:![transition-duration:0.01ms] motion-reduce:[&_*::after]:!scroll-auto motion-reduce:[&_*::after]:![transition-duration:0.01ms] [@media(max-width:760px)]:flex-col"
       >
         <RecordingController noteId={noteId ?? undefined} />
         <aside
-          className="flex min-h-dvh flex-[0_0_224px] flex-col gap-6 border-r border-vn-divider bg-vn-sidebar px-4 pb-5 pt-7 [@media(max-width:760px)]:hidden"
+          className="flex min-h-0 flex-[0_0_224px] flex-col gap-6 overflow-y-auto border-r border-vn-divider bg-vn-sidebar px-4 pb-5 pt-7 [@media(max-width:760px)]:hidden"
           aria-label="Primary navigation"
         >
           <Link
             href="/"
-            className="flex min-h-8 items-center px-3.5 text-[18px] font-medium tracking-[-0.04em] text-vn-text"
+            className="flex min-h-8 shrink-0 items-center px-3.5 text-[18px] font-medium tracking-[-0.04em] text-vn-text"
             aria-label="VoidNote home"
           >
             voidnote
           </Link>
           {pathname !== "/" && (
             <Button
-              className="flex h-[38px] justify-start gap-2.5 px-3.5 py-0"
+              className="flex h-[38px] shrink-0 justify-start gap-2.5 px-3.5 py-0"
               variant="sidebar-outline"
               aria-label="New note"
               disabled={status !== "ready"}
@@ -183,7 +183,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
               New note
             </Button>
           )}
-          <nav className="flex flex-col gap-1" aria-label="Workspace">
+          <nav className="flex shrink-0 flex-col gap-1" aria-label="Workspace">
             {navigation.map(({ href, label, icon: Icon }) => (
               <Link
                 key={href}
@@ -200,23 +200,32 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           {pathname !== "/" && (
-            <div className="flex flex-col gap-0.5">
-              <p className="mb-1.5 mt-0 px-3.5 pb-2 text-meta font-medium uppercase tracking-wider text-vn-muted">
+            <section aria-label="Recent notes" className="flex min-h-20 flex-1 flex-col gap-0.5">
+              <p className="mb-1.5 mt-0 shrink-0 px-3.5 pb-2 text-meta font-medium uppercase tracking-wider text-vn-muted">
                 Notes
               </p>
-              {recentNotes.map((item) => (
-                <Link
-                  key={item.id}
-                  href={`/notes/${encodeURIComponent(item.id)}`}
-                  className="block truncate rounded-[3px] px-3.5 py-2.5 text-meta text-vn-secondary hover:bg-vn-hover hover:text-vn-text"
-                >
-                  {item.title || "Untitled note"}
-                  {edits[`note:${item.id}`]?.dirty && <span aria-label="Unsaved changes"> ·</span>}
-                </Link>
-              ))}
-            </div>
+              <div
+                role="region"
+                aria-label="Recent notes list"
+                tabIndex={0}
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+              >
+                {recentNotes.map((item) => (
+                  <Link
+                    key={item.id}
+                    href={`/notes/${encodeURIComponent(item.id)}`}
+                    className="block truncate rounded-[3px] px-3.5 py-2.5 text-meta text-vn-secondary hover:bg-vn-hover hover:text-vn-text"
+                  >
+                    {item.title || "Untitled note"}
+                    {edits[`note:${item.id}`]?.dirty && (
+                      <span aria-label="Unsaved changes"> ·</span>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            </section>
           )}
-          <div className="mt-auto flex flex-col gap-2 border-t border-vn-stroke px-2 pt-3.5">
+          <div className="mt-auto flex shrink-0 flex-col gap-2 border-t border-vn-stroke px-2 pt-3.5">
             <span className="truncate text-[11px] text-vn-muted" title={session?.user.email ?? ""}>
               {session?.user.email}
             </span>
@@ -232,7 +241,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
           </div>
         </aside>
         <main
-          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto [@media(max-width:760px)]:pb-[calc(62px+env(safe-area-inset-bottom))]"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           id="main-content"
           aria-label={
             pathname.startsWith("/notes/")
@@ -244,39 +253,41 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
                   : "Notes"
           }
         >
-          {recoveryError && (
-            <Alert variant="notice">
-              <AlertDescription>
-                {recoveryError}
-                {recoveryHydration === "error" && (
-                  <Button variant="link" onClick={() => void retryRecovery()}>
-                    Retry recovery
-                  </Button>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-          {error && (
-            <Alert variant="notice">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          {recoveryHydration === "loading" && (
-            <p role="status" className="m-0 px-6 text-vn-muted">
-              Recovering saved drafts…
-            </p>
-          )}
-          {!!recoveredDraftCount && (
-            <p className="m-0 px-6 text-vn-muted" role="status">
-              Recovered {recoveredDraftCount} draft{recoveredDraftCount === 1 ? "" : "s"} from this
-              device.
-            </p>
-          )}
-          {children}
+          <div className="max-h-[20dvh] shrink-0 overflow-y-auto">
+            {recoveryError && (
+              <Alert variant="notice">
+                <AlertDescription>
+                  {recoveryError}
+                  {recoveryHydration === "error" && (
+                    <Button variant="link" onClick={() => void retryRecovery()}>
+                      Retry recovery
+                    </Button>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+            {error && (
+              <Alert variant="notice">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            {recoveryHydration === "loading" && (
+              <p role="status" className="m-0 px-6 text-vn-muted">
+                Recovering saved drafts…
+              </p>
+            )}
+            {!!recoveredDraftCount && (
+              <p className="m-0 px-6 text-vn-muted" role="status">
+                Recovered {recoveredDraftCount} draft{recoveredDraftCount === 1 ? "" : "s"} from
+                this device.
+              </p>
+            )}
+          </div>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
           <RecordingDock {...(noteId ? { noteId } : {})} />
         </main>
         <nav
-          className="fixed inset-x-0 bottom-0 z-20 hidden min-h-[calc(56px+env(safe-area-inset-bottom))] items-center justify-around border-t border-vn-stroke bg-vn-sidebar px-3.5 pb-[env(safe-area-inset-bottom)] pt-1 [@media(max-width:760px)]:flex"
+          className="hidden min-h-[calc(56px+env(safe-area-inset-bottom))] shrink-0 items-center justify-around border-t border-vn-stroke bg-vn-sidebar px-3.5 pb-[env(safe-area-inset-bottom)] pt-1 [@media(max-width:760px)]:flex"
           aria-label="Mobile workspace navigation"
         >
           {navigation.map(({ href, label, icon: Icon }) => (

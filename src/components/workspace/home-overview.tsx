@@ -35,7 +35,7 @@ export function HomeMetrics({ overview }: { overview: OverviewQuery }) {
   ];
 
   return (
-    <section aria-label="Workspace overview" className="flex min-w-0 flex-col gap-4">
+    <section aria-label="Workspace overview" className="flex min-w-0 shrink-0 flex-col gap-4">
       {overview.isError && (
         <Alert variant="error">
           <AlertDescription>
@@ -79,66 +79,76 @@ export function RecentRecordings({ overview }: { overview: OverviewQuery }) {
   const recordings = overview.data?.recentRecordings.slice(0, RECENT_RECORDINGS_LIMIT);
 
   return (
-    <section aria-labelledby="recent-recordings-title" className="flex min-w-0 flex-col gap-4">
+    <section
+      aria-labelledby="recent-recordings-title"
+      className="flex max-h-[60dvh] min-h-0 min-w-0 flex-col gap-4 min-[1100px]:max-h-none"
+    >
       <h2
         id="recent-recordings-title"
-        className="m-0 flex min-h-9 items-center text-[14px] font-medium leading-5 text-vn-text"
+        className="sticky top-0 z-[1] m-0 flex min-h-9 shrink-0 items-center bg-vn-page text-[14px] font-medium leading-5 text-vn-text"
       >
         Recently recorded
       </h2>
-      {!recordings && !overview.isError && (
-        <div role="status" aria-label="Loading recent recordings">
-          <Skeleton variant="row" className="h-[92px]" />
-          <Skeleton variant="row" className="h-[92px]" />
-          <Skeleton variant="row" className="h-[92px]" />
-        </div>
-      )}
-      {!recordings && overview.isError && (
-        <p className="m-0 text-[12px] leading-[18px] text-vn-muted">
-          Recent recordings unavailable.
-        </p>
-      )}
-      {recordings?.length === 0 && (
-        <Empty className="px-0 md:px-0">
-          <EmptyHeader>
-            <EmptyTitle>No recordings yet</EmptyTitle>
-            <EmptyDescription>Record or upload audio in a note.</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      )}
-      {recordings && recordings.length > 0 && (
-        <ul className="m-0 flex list-none flex-col p-0" aria-label="Recent recordings">
-          {recordings.map((recording) => (
-            <li key={recording.id}>
-              <Link
-                href={`/notes/${encodeURIComponent(recording.noteId)}`}
-                className="group/recording flex min-h-[92px] items-center gap-2 border-b border-vn-stroke py-[18px]"
-              >
-                <span className="flex min-w-0 flex-1 flex-col gap-[7px]">
-                  <span className="truncate text-[14px] leading-5 text-vn-text group-hover/recording:underline group-hover/recording:underline-offset-4">
-                    {recording.title || "Untitled note"}
-                  </span>
-                  <span className="flex flex-wrap gap-x-3 gap-y-1 text-[12px] leading-[18px] text-vn-muted">
-                    <span>{recordedTime(recording.durationSeconds)}</span>
-                    <time dateTime={recording.createdAt}>
-                      {new Date(recording.createdAt).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </time>
-                  </span>
-                </span>
-                <span
-                  className="flex size-11 flex-none items-center justify-center text-[16px] text-vn-muted"
-                  aria-hidden="true"
+      <div
+        role="region"
+        aria-label="Recent recordings list"
+        tabIndex={0}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      >
+        {!recordings && !overview.isError && (
+          <div role="status" aria-label="Loading recent recordings">
+            <Skeleton variant="row" className="h-[92px]" />
+            <Skeleton variant="row" className="h-[92px]" />
+            <Skeleton variant="row" className="h-[92px]" />
+          </div>
+        )}
+        {!recordings && overview.isError && (
+          <p className="m-0 text-[12px] leading-[18px] text-vn-muted">
+            Recent recordings unavailable.
+          </p>
+        )}
+        {recordings?.length === 0 && (
+          <Empty className="px-0 md:px-0">
+            <EmptyHeader>
+              <EmptyTitle>No recordings yet</EmptyTitle>
+              <EmptyDescription>Record or upload audio in a note.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
+        {recordings && recordings.length > 0 && (
+          <ul className="m-0 flex list-none flex-col p-0" aria-label="Recent recordings">
+            {recordings.map((recording) => (
+              <li key={recording.id}>
+                <Link
+                  href={`/notes/${encodeURIComponent(recording.noteId)}`}
+                  className="group/recording flex min-h-[92px] items-center gap-2 border-b border-vn-stroke py-[18px]"
                 >
-                  ↗
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+                  <span className="flex min-w-0 flex-1 flex-col gap-[7px]">
+                    <span className="truncate text-[14px] leading-5 text-vn-text group-hover/recording:underline group-hover/recording:underline-offset-4">
+                      {recording.title || "Untitled note"}
+                    </span>
+                    <span className="flex flex-wrap gap-x-3 gap-y-1 text-[12px] leading-[18px] text-vn-muted">
+                      <span>{recordedTime(recording.durationSeconds)}</span>
+                      <time dateTime={recording.createdAt}>
+                        {new Date(recording.createdAt).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </time>
+                    </span>
+                  </span>
+                  <span
+                    className="flex size-11 flex-none items-center justify-center text-[16px] text-vn-muted"
+                    aria-hidden="true"
+                  >
+                    ↗
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }

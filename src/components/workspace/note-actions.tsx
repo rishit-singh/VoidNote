@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
+import { MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -14,66 +14,51 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useNoteStore } from "@/stores/use-note-store";
 import { useCaptureStore } from "@/stores/use-capture-store";
-import { useRecordingProcessing } from "@/hooks/use-recording-processing";
-import { buildRecordingBlob } from "@/lib/idb-recordings";
+import { runEntityAction } from "@/lib/action-toasts";
 
 export function NoteActions({ noteId }: { noteId: string }) {
   const router = useRouter();
   const edit = useNoteStore((s) => s.edits[`note:${noteId}`]);
   const ready = useNoteStore((s) => s.status === "ready");
   const capture = useCaptureStore((s) => s.status);
-  const p = useRecordingProcessing(noteId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const active = !["idle", "error"].includes(capture);
-  async function fresh(copyAudio: boolean) {
+  function fresh() {
     const state = useNoteStore.getState();
-    const original = state.notes.find((n) => n.id === noteId);
-    if (!original || !state.session) return;
-    setBusy(true);
+    if (
+      !state.session ||
+      state.status !== "ready" ||
+      !state.notes.some((note) => note.id === noteId)
+    )
+      return;
     setError(null);
     try {
-      let blob: Blob | undefined;
-      if (copyAudio && p.local?.status === "finalized")
-        blob = await buildRecordingBlob(p.local.id, p.local.mimeType);
-      else if (copyAudio && p.recording?.status === "ready") {
-        const response = await fetch(
-          `/api/workspaces/${state.session.workspace.id}/notes/${noteId}/recordings/${p.recording.id}/audio`,
-        );
-        if (!response.ok) throw new Error("Could not copy the audio. Please retry.");
-        blob = await response.blob();
-      }
-      if (useNoteStore.getState().epoch !== state.epoch) return;
+      // Keep the original intact. The new editor autosaves this empty-title draft;
+      // its first acknowledged save assigns the workspace's next note number.
       const next = state.createNote();
-      state.upsertNote({
-        ...next,
-        title: `${original.title || "Untitled note"}${copyAudio ? " (copy)" : ""}`,
-      });
-      await state.saveNote(next.id);
-      if (useNoteStore.getState().epoch !== state.epoch) return;
-      if (!useNoteStore.getState().noteRecords[next.id])
-        throw new Error("Could not save the new note.");
       router.push(`/notes/${next.id}`);
-      if (blob)
-        await useCaptureStore.getState().upload(
-          next.id,
-          new File([blob], "recording", {
-            type: blob.type || p.recording?.mimeType || "audio/wav",
-          }),
-        );
     } catch (failure) {
-      if (useNoteStore.getState().epoch === state.epoch)
-        setError(failure instanceof Error ? failure.message : "Could not create note.");
-    } finally {
-      setBusy(false);
+      setError(failure instanceof Error ? failure.message : "Could not open a new note.");
     }
+  }
+
+  async function act(action: "delete" | "retry" | "keep-draft" | "use-latest") {
+    const epoch = useNoteStore.getState().epoch;
+    setBusy(true);
+    setError(null);
+    const outcome = await runEntityAction("note", noteId, action);
+    if (useNoteStore.getState().epoch !== epoch) return;
+    setBusy(false);
+    if (outcome.error) setError(outcome.error);
+    if (outcome.deleted) router.push("/");
   }
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-end gap-3">
         <span role="status" className="text-meta text-muted-foreground">
           {busy
-            ? "Copying…"
+            ? "Working…"
             : edit?.saving || (edit?.dirty && !edit.error)
               ? "Saving…"
               : edit?.error || edit?.pending
@@ -94,14 +79,7 @@ export function NoteActions({ noteId }: { noteId: string }) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuGroup>
-              <DropdownMenuItem
-                disabled={!ready || active || !p.loaded}
-                onSelect={() => void fresh(true)}
-              >
-                <Copy />
-                Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled={!ready || active} onSelect={() => void fresh(false)}>
+              <DropdownMenuItem disabled={!ready || active} onSelect={fresh}>
                 <RotateCcw />
                 Start over in a new note
               </DropdownMenuItem>
@@ -109,16 +87,10 @@ export function NoteActions({ noteId }: { noteId: string }) {
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem
-                disabled={active || !!edit?.pending || !!edit?.saving}
-                onSelect={() =>
-                  void useNoteStore
-                    .getState()
-                    .deleteNote(noteId)
-                    .then(() => {
-                      if (!useNoteStore.getState().notes.some((n) => n.id === noteId))
-                        router.push("/");
-                    })
+                disabled={
+                  !ready || active || !!edit?.pending || !!edit?.saving || edit?.conflict != null
                 }
+                onSelect={() => void act("delete")}
               >
                 <Trash2 />
                 Delete note
@@ -140,15 +112,15 @@ export function NoteActions({ noteId }: { noteId: string }) {
               <>
                 <Button
                   variant="outline"
-                  onClick={() => void useNoteStore.getState().resolveConflict("note", noteId, true)}
+                  disabled={busy || edit.saving}
+                  onClick={() => void act("keep-draft")}
                 >
                   Keep mine
                 </Button>
                 <Button
                   variant="ghost"
-                  onClick={() =>
-                    void useNoteStore.getState().resolveConflict("note", noteId, false)
-                  }
+                  disabled={busy || edit.saving}
+                  onClick={() => void act("use-latest")}
                 >
                   Use latest
                 </Button>
@@ -156,7 +128,8 @@ export function NoteActions({ noteId }: { noteId: string }) {
             ) : (
               <Button
                 variant="outline"
-                onClick={() => void useNoteStore.getState().retry("note", noteId)}
+                disabled={busy || edit?.saving}
+                onClick={() => void act("retry")}
               >
                 Retry
               </Button>

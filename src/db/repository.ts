@@ -34,6 +34,7 @@ import {
   DEFAULT_BRANCH,
   domainEvents,
   notes,
+  noteTitleCounters,
   outbox,
   people,
   recordings,
@@ -468,7 +469,28 @@ export function createWorkspaceRepository(db: Database) {
       const input = saveNoteSchema.parse(value);
       return command(principal, workspaceId, "note", "save", input, noteSchema, async (tx) => {
         const now = new Date();
-        const values = { ...input.content, revision: input.expectedRevision + 1, updatedAt: now };
+        let title = input.content.title;
+        if (input.expectedRevision === 0 && !title.trim()) {
+          // Claiming the receipt happens first. Allocation, projection, receipt,
+          // event and outbox either all commit or all roll back.
+          const [counter] = await tx
+            .insert(noteTitleCounters)
+            .values({ workspaceId, lastNumber: 1 })
+            .onConflictDoUpdate({
+              target: noteTitleCounters.workspaceId,
+              set: { lastNumber: sql`${noteTitleCounters.lastNumber} + 1` },
+            })
+            .returning({ number: noteTitleCounters.lastNumber });
+          if (!counter) throw new Error("Missing note title allocation");
+          title = `Untitled note (${counter.number})`;
+        }
+
+        const values = {
+          ...input.content,
+          title,
+          revision: input.expectedRevision + 1,
+          updatedAt: now,
+        };
         const [row] =
           input.expectedRevision > 0
             ? await tx

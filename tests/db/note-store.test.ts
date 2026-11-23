@@ -216,6 +216,191 @@ void describe("workspace store recovery boundaries (no database)", { concurrency
     assert.equal(useNoteStore.getState().edits[key]?.pending, null);
   });
 
+  void it("accepts the server-allocated first title without fetching or deriving it from lists", async () => {
+    const note = useNoteStore.getState().createNote();
+    const saveNote = workspaceApi.saveNote;
+    workspaceApi.saveNote = async (...args) => {
+      const record = { ...(await saveNote(...args)), title: "Untitled note (42)" };
+      records.set(note.id, record);
+      return record;
+    };
+    await useNoteStore.getState().saveNote(note.id);
+    assert.equal(commands[0]?.content.title, "");
+    assert.equal(useNoteStore.getState().notes[0]?.title, "Untitled note (42)");
+    assert.equal(useNoteStore.getState().noteRecords[note.id]?.title, "Untitled note (42)");
+    assert.equal(useNoteStore.getState().edits[`note:${note.id}`]?.dirty, false);
+    assert.equal(noteListCalls, 0);
+    assert.deepEqual(await workspaceRecovery(scope).read(), []);
+  });
+
+  for (const newerTitle of [undefined, "Newer title", " \t"]) {
+    void it(`reconciles an allocated title through newer ${newerTitle === undefined ? "transcript-only" : "title"} edits (${JSON.stringify(newerTitle)})`, async () => {
+      const note = useNoteStore.getState().createNote();
+      const key = `note:${note.id}`;
+      const saveNote = workspaceApi.saveNote;
+      let release!: () => void;
+      workspaceApi.saveNote = async (...args) => {
+        const saved = await saveNote(...args);
+        const record = { ...saved, title: "Untitled note (7)" };
+        records.set(note.id, record);
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return record;
+      };
+      const saving = useNoteStore.getState().saveNote(note.id);
+      await Promise.resolve();
+      const audio = new Blob(["new audio"]);
+      useNoteStore.getState().upsertNote({
+        ...note,
+        title: newerTitle ?? note.title,
+        transcript: "Newer transcript",
+        audio,
+        url: "blob:live-capture",
+      });
+      const generation = useNoteStore.getState().edits[key]!.generation;
+      release();
+      await saving;
+
+      const expectedTitle = newerTitle ?? "Untitled note (7)";
+      const draft = useNoteStore.getState().notes[0]!;
+      assert.equal(draft.title, expectedTitle);
+      assert.equal(draft.transcript, "Newer transcript");
+      assert.equal(draft.audio, audio);
+      assert.equal(draft.url, "blob:live-capture");
+      assert.equal(useNoteStore.getState().noteRecords[note.id]?.title, "Untitled note (7)");
+      assert.equal(useNoteStore.getState().edits[key]?.generation, generation);
+      assert.equal(useNoteStore.getState().edits[key]?.dirty, true);
+      assert.equal(useNoteStore.getState().edits[key]?.pending, null);
+      const [recovered] = await workspaceRecovery(scope).read();
+      assert.equal(recovered?.entity === "note" && recovered.draft.title, expectedTitle);
+      assert.equal(recovered?.entity === "note" && recovered.draft.transcript, "Newer transcript");
+
+      workspaceApi.saveNote = saveNote;
+      await useNoteStore.getState().saveNote(note.id);
+      assert.equal(commands[1]?.expectedRevision, 1);
+      assert.deepEqual(commands[1]?.content, {
+        title: expectedTitle,
+        transcript: "Newer transcript",
+      });
+      assert.equal(useNoteStore.getState().edits[key]?.dirty, false);
+    });
+  }
+
+  for (const recovering of [false, true]) {
+    void it(`preserves a later round-trip title clear on ${recovering ? "recovered exact retry" : "first acknowledgement"}`, async () => {
+      const note = useNoteStore.getState().createNote();
+      const key = `note:${note.id}`;
+      const saveNote = workspaceApi.saveNote;
+      let release!: () => void;
+      let receipt!: NoteRecord;
+      workspaceApi.saveNote = async (...args) => {
+        receipt = { ...(await saveNote(...args)), title: "Untitled note (9)" };
+        records.set(note.id, receipt);
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        if (recovering) throw new ApiError("Response lost after commit", 503);
+        return receipt;
+      };
+      const saving = useNoteStore.getState().saveNote(note.id);
+      await Promise.resolve();
+      const pending = useNoteStore.getState().edits[key]!.pending!;
+      const originalCommand = JSON.stringify(pending.command);
+      useNoteStore.getState().upsertNote({ ...note, title: "Temporary" });
+      useNoteStore.getState().upsertNote({ ...note, title: "" });
+      assert.equal(useNoteStore.getState().edits[key]?.titleGeneration, 2);
+      assert.equal(useNoteStore.getState().edits[key]?.pending, pending);
+      release();
+      await saving;
+
+      if (recovering) {
+        useNoteStore.getState().clearSession();
+        await useNoteStore.getState().refreshSession();
+        assert.equal(useNoteStore.getState().edits[key]?.titleGeneration, 2);
+        workspaceApi.saveNote = (_workspaceId, command, options) => {
+          assert.equal(JSON.stringify(command), originalCommand);
+          assert.deepEqual(options, { replaying: true });
+          return Promise.resolve(receipt);
+        };
+        await useNoteStore.getState().retry("note", note.id);
+      }
+      assert.equal(useNoteStore.getState().notes[0]?.title, "");
+      assert.equal(useNoteStore.getState().noteRecords[note.id]?.title, receipt.title);
+      assert.equal(useNoteStore.getState().edits[key]?.dirty, true);
+      assert.equal(useNoteStore.getState().edits[key]?.pending, null);
+      const [stored] = await workspaceRecovery(scope).read();
+      assert.equal(stored?.entity === "note" && stored.draft.title, "");
+      workspaceApi.saveNote = saveNote;
+      await useNoteStore.getState().saveNote(note.id);
+      assert.equal(commands[1]?.content.title, "");
+      assert.equal(commands[1]?.expectedRevision, 1);
+      assert.equal(useNoteStore.getState().edits[key]?.dirty, false);
+    });
+  }
+
+  void it("recovers an allocated first-save title after a lost response without changing the exact command", async () => {
+    const note = useNoteStore.getState().createNote();
+    useNoteStore.getState().upsertNote({ ...note, title: " \n" });
+    const saveNote = workspaceApi.saveNote;
+    let receipt!: NoteRecord;
+    workspaceApi.saveNote = async (...args) => {
+      receipt = { ...(await saveNote(...args)), title: "Untitled note (12)" };
+      records.set(note.id, receipt);
+      throw new ApiError("Response lost after commit", 503);
+    };
+    await useNoteStore.getState().saveNote(note.id);
+    const original = commands[0]!;
+    useNoteStore.getState().upsertNote({
+      ...useNoteStore.getState().notes[0]!,
+      transcript: "Newer transcript awaiting recovery",
+    });
+    useNoteStore.getState().clearSession();
+    await useNoteStore.getState().refreshSession();
+    assert.equal(useNoteStore.getState().notes[0]?.title, " \n");
+    workspaceApi.saveNote = (_workspaceId, command, options) => {
+      assert.deepEqual(command, original);
+      assert.deepEqual(options, { replaying: true });
+      return Promise.resolve(receipt);
+    };
+    await useNoteStore.getState().retry("note", note.id);
+    assert.equal(useNoteStore.getState().notes[0]?.title, receipt.title);
+    assert.equal(
+      useNoteStore.getState().notes[0]?.transcript,
+      "Newer transcript awaiting recovery",
+    );
+    assert.equal(useNoteStore.getState().edits[`note:${note.id}`]?.dirty, true);
+    workspaceApi.saveNote = saveNote;
+    await useNoteStore.getState().saveNote(note.id);
+    assert.equal(commands[1]?.content.title, receipt.title);
+    assert.equal(commands[1]?.expectedRevision, 1);
+  });
+
+  void it("does not merge a historical allocated title over a newer server revision during replay", async () => {
+    const note = useNoteStore.getState().createNote();
+    mutationStatus = 503;
+    await useNoteStore.getState().saveNote(note.id);
+    useNoteStore.getState().upsertNote({ ...note, transcript: "Newer local transcript" });
+    const receipt: NoteRecord = {
+      ...commands[0]!.content,
+      id: note.id,
+      title: "Untitled note (4)",
+      workspaceId: scope.workspace.id,
+      revision: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      deletedAt: null,
+    };
+    records.set(note.id, { ...receipt, title: "Renamed elsewhere", revision: 2 });
+    workspaceApi.saveNote = () => Promise.resolve(receipt);
+    await useNoteStore.getState().retry("note", note.id);
+    assert.equal(useNoteStore.getState().notes[0]?.title, "");
+    assert.equal(useNoteStore.getState().notes[0]?.transcript, "Newer local transcript");
+    assert.equal(useNoteStore.getState().noteRecords[note.id]?.title, "Renamed elsewhere");
+    assert.equal(useNoteStore.getState().edits[`note:${note.id}`]?.conflict, 2);
+    assert.equal(useNoteStore.getState().edits[`note:${note.id}`]?.pending, null);
+  });
+
   void it("verifies a replayed create receipt against the live tombstone and retains the newer draft", async () => {
     const note = useNoteStore.getState().createNote();
     useNoteStore.getState().upsertNote({ ...note, title: "Original request" });

@@ -83,6 +83,7 @@ const editKey = (entity: Entity, id: string) => `${entity}:${id}`;
 const cleanEdit = (baseRevision = 0): EditState => ({
   baseRevision,
   generation: 0,
+  titleGeneration: 0,
   dirty: baseRevision === 0,
   saving: false,
   pending: null,
@@ -262,7 +263,7 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
         else if (entity === "note") {
           const note = state.notes.find((entry) => entry.id === id);
           if (!note) return;
-          pending = prepareNoteCommand(note, command, edit.generation);
+          pending = prepareNoteCommand(note, command, edit.generation, edit.titleGeneration ?? 0);
         } else {
           const person = state.people.find((entry) => entry.id === id);
           if (!person) return;
@@ -350,6 +351,29 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
             "Your command succeeded, but a newer server revision is available. Review it before saving again.",
         });
         return;
+      }
+      if (
+        entity === "note" &&
+        pending.kind === "note" &&
+        pending.command.expectedRevision === 0 &&
+        !pending.command.content.title.trim() &&
+        pending.titleGeneration !== undefined &&
+        current.titleGeneration === pending.titleGeneration &&
+        !record.deletedAt &&
+        changedDuringSave
+      ) {
+        const sentTitle = pending.command.content.title;
+        // A newer transcript draft must inherit the allocated title, otherwise its
+        // next save would erase it. Title generations also preserve edits that
+        // round-trip back to the original blank value.
+        // Run only after replay/current-revision validation, never on a stale receipt.
+        set((state) => ({
+          notes: state.notes.map((note) =>
+            note.id === id && note.title === sentTitle
+              ? { ...note, title: (record as NoteRecord).title }
+              : note,
+          ),
+        }));
       }
       updateEdit(key, {
         baseRevision: record.revision,
@@ -512,6 +536,14 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
             if (entity === "note") acceptNote(result.value as NoteRecord);
             else acceptPerson(result.value as PersonRecord);
           }
+          // If a draft was opened/edited during hydration, its title clock began
+          // independently of the recovered command. Carry that edit evidence
+          // forward relative to the recovered clock before adopting its payload.
+          const recoveredTitleGeneration = Math.max(
+            edit.titleGeneration ?? 0,
+            (edit.pending?.kind === "note" ? (edit.pending.titleGeneration ?? 0) : 0) +
+              (before?.titleGeneration ?? 0),
+          );
           rawSet((state) => {
             const local = state.notes.find((note) => note.id === draft.id);
             return {
@@ -552,6 +584,9 @@ export const useNoteStore = create<NoteStoreState>((rawSet, get) => {
                         // the original uncertain payload independently of that draft.
                         baseRevision: edit.baseRevision,
                         generation: Math.max(before.generation, edit.generation + 1),
+                        titleGeneration: before.pending
+                          ? before.titleGeneration
+                          : recoveredTitleGeneration,
                         dirty: true,
                         pending: before.pending ?? edit.pending,
                         conflict: before.conflict ?? edit.conflict,

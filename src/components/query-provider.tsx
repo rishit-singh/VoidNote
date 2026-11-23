@@ -7,6 +7,7 @@ import type { AppRouter } from "@/contracts/rpc";
 import { configureQueryIdentity, getQueryRuntime, watchQueryChanges } from "@/lib/query-runtime";
 import { useNoteStore } from "@/stores/use-note-store";
 import { ApiError, asApiError } from "@/lib/api-error";
+import { watchActionToastScope } from "@/lib/action-toasts";
 
 export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
 
@@ -21,6 +22,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
   );
   const runtime = getQueryRuntime();
   useEffect(watchQueryChanges, []);
+  useEffect(watchActionToastScope, []);
   useEffect(
     () =>
       useNoteStore.subscribe(() => {

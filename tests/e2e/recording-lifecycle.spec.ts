@@ -375,7 +375,9 @@ test.describe("new-note real capture with mocked upload/processing transport", (
 
       await expect(page.getByRole("button", { name: "Stop recording", exact: true })).toBeVisible();
       expect(acknowledgedAtMicrophone).toEqual([true]);
-      await expect.poll(() => workspace.notes.get(noteId)?.title).toBe(title);
+      await expect
+        .poll(() => workspace.notes.get(noteId)?.title)
+        .toBe(title || "Untitled note (1)");
       await expect.poll(async () => (await manifests(page))[0]?.chunkCount ?? 0).toBeGreaterThan(0);
       const [started] = await manifests(page);
       expect(started?.noteId).toBe(noteId);

@@ -185,9 +185,9 @@ export function RecordingDock({ noteId }: { noteId?: string | undefined }) {
   return (
     <section
       aria-label="Audio recorder"
-      className="sticky bottom-0 z-[2] flex w-full flex-col gap-3 bg-vn-page px-[clamp(24px,5.5vw,80px)] pb-[18px] pt-3 [@media(max-width:760px)]:px-4 [@media(max-width:760px)]:pb-3 [@media(max-width:760px)]:pt-2"
+      className="flex max-h-[45dvh] w-full shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain bg-vn-page px-[clamp(24px,5.5vw,80px)] pb-[max(18px,env(safe-area-inset-bottom))] pt-3 [@media(max-width:760px)]:px-4 [@media(max-width:760px)]:pb-3 [@media(max-width:760px)]:pt-2"
     >
-      <div className="flex min-h-[80px] w-full flex-wrap items-center gap-3 rounded-md border border-border bg-card px-4 py-3 sm:min-h-[68px] sm:gap-5">
+      <div className="flex min-h-[80px] w-full shrink-0 flex-wrap items-center gap-3 rounded-md border border-border bg-card px-4 py-3 sm:min-h-[68px] sm:gap-5">
         <div className="flex shrink-0 items-center gap-2">
           {capture.status === "recording" || capture.status === "paused" ? (
             <>

@@ -105,9 +105,14 @@ test("mobile recent recordings are bounded, fit long titles and open their note"
   expect(recentBox!.y).toBeGreaterThan(notesBox!.y + notesBox!.height);
   await expectNoOverflow(page);
   await page.screenshot({ path: test.info().outputPath("home-mobile.png"), fullPage: true });
-  await page.locator("#main-content").evaluate((element) => {
+  await page.getByRole("region", { name: "Home content", exact: true }).evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
+  expect(
+    await page
+      .getByRole("main", { name: "Notes", exact: true })
+      .evaluate((element) => element.scrollTop),
+  ).toBe(0);
   const lastRecording = await recent.getByRole("link").last().boundingBox();
   const mobileNavigation = await page
     .getByRole("navigation", { name: "Mobile workspace navigation" })

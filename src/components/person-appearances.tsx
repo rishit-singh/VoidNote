@@ -47,55 +47,66 @@ function ScopedAppearances({ personId, workspaceId }: { personId: string; worksp
     else await query.refetch();
   };
   return (
-    <section aria-label="Recording appearances" className="flex flex-col gap-4 py-5">
+    <section aria-label="Recording appearances" className="flex min-h-0 flex-col gap-4 py-5">
       <Separator />
-      <div className="flex items-center justify-between gap-3">
+      <div className="sticky top-0 z-[1] flex shrink-0 flex-wrap items-center justify-between gap-3 bg-vn-page py-2">
         <h3 className="text-sm font-medium">Recording appearances</h3>
         <Button variant="ghost" size="sm" disabled={loading} onClick={() => void load()}>
           Refresh appearances
         </Button>
       </div>
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>
-            {error}
-            <Button variant="link" disabled={loading} onClick={() => void load()}>
-              Retry appearances
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-      {loading && <Skeleton className="h-16 w-full" aria-label="Loading appearances" />}
-      {page?.items.length === 0 && (
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle>No appearances yet</EmptyTitle>
-            <EmptyDescription>Speech assigned to this profile will appear here.</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      )}
-      <ol className="flex flex-col gap-4">
-        {page?.items.map((item) => (
-          <li key={`${item.runId}:${item.utteranceId}`} className="flex flex-col gap-1">
-            <Button asChild variant="link" className="h-auto justify-start whitespace-normal px-0">
-              <Link
-                href={`/notes/${item.noteId}?recordingId=${item.recordingId}&at=${item.startSeconds}`}
+      <div
+        role="region"
+        aria-label="Appearance list"
+        tabIndex={0}
+        className="flex max-h-[50dvh] min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain [&>*]:shrink-0"
+      >
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>
+              {error}
+              <Button variant="link" disabled={loading} onClick={() => void load()}>
+                Retry appearances
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+        {loading && <Skeleton className="h-16 w-full" aria-label="Loading appearances" />}
+        {page?.items.length === 0 && (
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>No appearances yet</EmptyTitle>
+              <EmptyDescription>Speech assigned to this profile will appear here.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
+        <ol className="flex flex-col gap-4">
+          {page?.items.map((item) => (
+            <li key={`${item.runId}:${item.utteranceId}`} className="flex flex-col gap-1">
+              <Button
+                asChild
+                variant="link"
+                className="h-auto justify-start whitespace-normal px-0"
               >
-                {item.noteTitle || "Untitled note"} · {Math.floor(item.startSeconds / 60)}:
-                {Math.floor(item.startSeconds % 60)
-                  .toString()
-                  .padStart(2, "0")}
-              </Link>
-            </Button>
-            <p className="line-clamp-2 text-sm text-muted-foreground">{item.text}</p>
-          </li>
-        ))}
-      </ol>
-      {page?.nextCursor && (
-        <Button variant="outline" disabled={loading} onClick={() => void load(page.nextCursor!)}>
-          More appearances
-        </Button>
-      )}
+                <Link
+                  href={`/notes/${item.noteId}?recordingId=${item.recordingId}&at=${item.startSeconds}`}
+                >
+                  {item.noteTitle || "Untitled note"} · {Math.floor(item.startSeconds / 60)}:
+                  {Math.floor(item.startSeconds % 60)
+                    .toString()
+                    .padStart(2, "0")}
+                </Link>
+              </Button>
+              <p className="line-clamp-2 text-sm text-muted-foreground">{item.text}</p>
+            </li>
+          ))}
+        </ol>
+        {page?.nextCursor && (
+          <Button variant="outline" disabled={loading} onClick={() => void load(page.nextCursor!)}>
+            More appearances
+          </Button>
+        )}
+      </div>
     </section>
   );
 }

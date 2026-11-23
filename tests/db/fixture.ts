@@ -70,6 +70,7 @@ export async function teardownDatabase() {
         "command_receipts",
         "people",
         "notes",
+        "note_title_counters",
         "workspace_memberships",
         "workspaces",
         "user_profiles",

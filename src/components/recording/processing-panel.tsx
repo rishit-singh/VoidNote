@@ -22,8 +22,8 @@ export function ProcessingPanel({ noteId, onSeek, selectedRecording }: Processin
   const retryable =
     failed || p.error || (p.loaded && !p.run && (!!p.recording || p.local?.status === "finalized"));
   return (
-    <section aria-label="Transcript" className="flex flex-col gap-6 py-6">
-      <h2 className="text-section">Transcript</h2>
+    <section aria-label="Transcript" className="flex min-w-0 flex-col gap-6 py-6">
+      <h2 className="sticky top-0 z-[1] bg-vn-page py-2 text-section">Transcript</h2>
       {p.run?.status === "succeeded" ? (
         <TranscriptEditor noteId={noteId} runId={p.run.id} onSeek={onSeek} />
       ) : (

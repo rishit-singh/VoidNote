@@ -160,6 +160,125 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     assert.equal(history.items[0]?.entityId, n.id);
   });
 
+  void it("allocates blank first-save titles persistently per workspace without consuming custom titles", async () => {
+    const { principal, workspaceId } = await workspace();
+    // Existing/imported blank titles are untouched, and do not seed the counter.
+    const legacyId = randomUUID();
+    await sql`insert into notes (workspace_id, id, revision, title, transcript)
+      values (${workspaceId}, ${legacyId}, 1, '', '')`;
+    const custom = await repo.saveNote(
+      principal,
+      workspaceId,
+      note({ content: { title: "  My title  ", transcript: "" } }),
+    );
+    assert.equal(custom.title, "  My title  ");
+    const create = note({ content: { title: "", transcript: "" } });
+    const first = await repo.saveNote(principal, workspaceId, create);
+    assert.equal(first.title, "Untitled note (1)");
+    assert.deepEqual(await repo.getNote(principal, workspaceId, first.id), first);
+    assert.equal((await repo.getNote(principal, workspaceId, legacyId)).title, "");
+
+    const renamed = await repo.saveNote(
+      principal,
+      workspaceId,
+      note({
+        id: first.id,
+        expectedRevision: 1,
+        content: { title: "Renamed", transcript: "" },
+      }),
+    );
+    await repo.deleteNote(principal, workspaceId, {
+      id: first.id,
+      commandId: randomUUID(),
+      expectedRevision: renamed.revision,
+    });
+    assert.deepEqual(await repo.saveNote(principal, workspaceId, create), first);
+
+    // Updates retain their actual title; allocation is exclusively for first save.
+    const cleared = await repo.saveNote(
+      principal,
+      workspaceId,
+      note({ id: custom.id, expectedRevision: 1, content: { title: "", transcript: "" } }),
+    );
+    assert.equal(cleared.title, "");
+    const second = await repo.saveNote(
+      principal,
+      workspaceId,
+      note({ content: { title: " \t\n", transcript: "Speech" } }),
+    );
+    assert.equal(second.title, "Untitled note (2)");
+    assert.equal(second.transcript, "Speech");
+    const [event] = await sql`select payload->>'title' as title from domain_events
+        where workspace_id = ${workspaceId} and entity_id = ${second.id}`;
+    assert.equal(event?.title, second.title);
+    const outsider = await workspace();
+    const independent = await repo.saveNote(
+      outsider.principal,
+      outsider.workspaceId,
+      note({ content: { title: "", transcript: "" } }),
+    );
+    assert.equal(independent.title, "Untitled note (1)");
+  });
+
+  void it("allocates unique titles for parallel creates and one number for concurrent exact retries", async () => {
+    const { principal, workspaceId } = await workspace();
+    const create = note({ content: { title: "", transcript: "" } });
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => repo.saveNote(principal, workspaceId, create)),
+    );
+    for (const result of results) assert.deepEqual(result, results[0]);
+    assert.equal(results[0]?.title, "Untitled note (1)");
+    const parallel = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        repo.saveNote(principal, workspaceId, note({ content: { title: "", transcript: "" } })),
+      ),
+    );
+    assert.deepEqual(
+      new Set(parallel.map((result) => result.title)),
+      new Set(Array.from({ length: 8 }, (_, index) => `Untitled note (${index + 2})`)),
+    );
+    assert.deepEqual(await counts(workspaceId), {
+      notes: 9,
+      people: 0,
+      events: 9,
+      receipts: 9,
+      outbox: 9,
+    });
+  });
+
+  void it("rolls back counter initialization and increments with rejected or failed creates", async () => {
+    const { principal, workspaceId } = await workspace();
+    const create = note({ content: { title: "", transcript: "" } });
+    await failInsert("outbox", workspaceId, async () => {
+      await assert.rejects(repo.saveNote(principal, workspaceId, create), pgCode("P0001"));
+      const rows = await sql`select * from note_title_counters where workspace_id = ${workspaceId}`;
+      assert.equal(rows.length, 0);
+    });
+    const first = await repo.saveNote(principal, workspaceId, create);
+    assert.equal(first.title, "Untitled note (1)");
+    const next = note({ content: { title: "", transcript: "" } });
+    await failInsert("outbox", workspaceId, async () => {
+      await assert.rejects(repo.saveNote(principal, workspaceId, next), pgCode("P0001"));
+    });
+    await assert.rejects(
+      repo.saveNote(principal, workspaceId, { ...create, commandId: randomUUID() }),
+      code("conflict"),
+    );
+    await assert.rejects(
+      repo.saveNote(principal, workspaceId, { ...create, id: randomUUID() }),
+      code("command_reused"),
+    );
+    const second = await repo.saveNote(principal, workspaceId, next);
+    assert.equal(second.title, "Untitled note (2)");
+    assert.deepEqual(await counts(workspaceId), {
+      notes: 2,
+      people: 0,
+      events: 2,
+      receipts: 2,
+      outbox: 2,
+    });
+  });
+
   for (const table of ["outbox", "command_receipts"] as const) {
     void it(`rolls back projection, events, receipts and outbox when ${table} insertion fails`, async () => {
       const { principal, workspaceId } = await workspace();

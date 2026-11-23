@@ -47,6 +47,7 @@ async function teardown() {
         "people",
         "notes",
         "workspace_memberships",
+        "note_title_counters",
         "workspaces",
         "user_profiles",
       ])

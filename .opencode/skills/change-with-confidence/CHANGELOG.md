@@ -1,5 +1,14 @@
 # Guidance changes
 
+## 2026-11-23 — Server defaults and explicit field clears
+
+- Numbered-title review reproduced an initial save overwriting a newer title clear
+  because the cleared value matched the original payload. Aggregate draft
+  generations could not distinguish this from a transcript-only edit.
+- Added field-specific edit-evidence guidance for merging server defaults.
+  Direct, interrupted/reloaded and hydration-race regressions pass in
+  `tests/db/note-store.test.ts` and `tests/db/hydration.test.ts`.
+
 ## 2026-11-22 — Exact command serialization
 
 - Production float output rounded recording duration before a strict equality

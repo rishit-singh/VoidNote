@@ -48,7 +48,7 @@ test("note audio, actions, transcript and persistent player share one overview r
     await expect(page.getByLabel("Loading transcript", { exact: true })).toBeVisible();
     await expect(page.getByTestId("persistent-audio")).toHaveCount(1);
     await expect.poll(() => overviewReads).toBe(1);
-    // All three note consumers plus shell polling and the player are mounted
+    // Note consumers plus shell polling and the player are mounted
     // while the same request is deliberately still in flight.
     expect(calls(workspace, "recordings.overview", note.id)).toHaveLength(1);
   } finally {

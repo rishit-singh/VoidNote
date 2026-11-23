@@ -104,6 +104,19 @@ export const notes = pgTable(
   ],
 ).enableRLS();
 
+// Allocations live independently of notes, so rename/delete never recycle a title.
+// A separate row also avoids upgrading the workspace authorization SHARE lock.
+export const noteTitleCounters = pgTable(
+  "note_title_counters",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => workspaces.id),
+    lastNumber: integer("last_number").notNull(),
+  },
+  (t) => [check("note_title_counters_number_check", sql`${t.lastNumber} > 0`)],
+).enableRLS();
+
 export const people = pgTable(
   "people",
   {

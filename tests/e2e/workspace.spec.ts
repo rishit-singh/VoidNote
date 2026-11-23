@@ -6,6 +6,9 @@ test("new note titles autosave, survive navigation and reload, and hide internal
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "New note", exact: true }).first().click();
+  // Creation has its own autosave. Wait for that acknowledgement rather than
+  // racing the first rename against the debounce and assuming two history rows.
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Untitled note (1)");
   await page.getByLabel("Title", { exact: true }).fill("Garden plan");
   await expect
     .poll(() => [...workspace.notes.values()].find((n) => n.title === "Garden plan")?.title)
@@ -17,10 +20,11 @@ test("new note titles autosave, survive navigation and reload, and hide internal
     .poll(() => [...workspace.notes.values()].some((n) => n.title === "Updated garden plan"))
     .toBe(true);
   await page.goto(route);
+  await page.reload();
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Updated garden plan");
   await expect(page.getByRole("textbox", { name: "Transcript", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Save note|History/ })).toHaveCount(0);
-  expect(workspace.history).toHaveLength(2);
+  expect(workspace.history).toHaveLength(3);
 });
 
 test("renaming a profile preserves its identity", async ({ page, workspace }) => {
@@ -237,19 +241,25 @@ test("unavailable draft storage prevents an uncheckpointed autosave", async ({
   expect(workspace.notes.get(note.id)?.title).toBe(note.title);
 });
 
-test("duplicate and start over create separate notes and retain the original", async ({
+test("note actions omit Duplicate and Start over saves a new title without changing the original", async ({
   page,
   workspace,
 }) => {
   const original = workspace.seedNote({ title: "Original conversation" });
   await page.goto(`/notes/${original.id}`);
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(original.title);
   await page.getByRole("button", { name: "Note actions" }).click();
-  await page.getByRole("menuitem", { name: "Duplicate", exact: true }).click();
-  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(
-    "Original conversation (copy)",
-  );
-  await page.getByRole("button", { name: "Note actions" }).click();
+  await expect(page.getByRole("menuitem", { name: /Duplicate/i })).toHaveCount(0);
   await page.getByRole("menuitem", { name: "Start over in a new note", exact: true }).click();
-  await expect.poll(() => workspace.notes.size).toBe(3);
-  expect(workspace.notes.get(original.id)?.deletedAt).toBeNull();
+  await expect(page).not.toHaveURL(new RegExp(`/notes/${original.id}$`));
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Untitled note (1)");
+  await expect.poll(() => workspace.notes.size).toBe(2);
+  expect(workspace.notes.get(original.id)).toEqual(original);
+  const replacement = [...workspace.notes.values()].find((note) => note.id !== original.id)!;
+  expect(replacement.transcript).toBe("");
+  expect(replacement.title).toBe("Untitled note (1)");
+  await page.reload();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(replacement.title);
+  await page.goto(`/notes/${original.id}`);
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(original.title);
 });

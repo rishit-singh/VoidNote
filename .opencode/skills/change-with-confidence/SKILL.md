@@ -69,6 +69,10 @@ Use the relevant checks, rather than mechanically adding state machinery everywh
 - **Hydration:** declare owner/schema/status/merge/reset rules; deduplicate bootstrap
   per verified scope. Failed hydration is not empty success. Recovery/refresh cannot
   overwrite newer drafts or recording manifests. Bound validation and concurrency.
+  When merging server-assigned defaults into newer drafts, value equality alone
+  cannot prove a field was untouched: users can edit and then clear it back.
+  Retain field-specific edit evidence across pending commands and recovery when
+  distinguishing that intent matters; verify direct acknowledgement and reload/retry.
 - **Commands:** persist exact intent before sending when uncertain outcomes require
   recovery. Retry the same ID/payload. A timeout does not prove rejection; preserve
   pending work until reconciled. Keep transactions, receipts and deletion checks.

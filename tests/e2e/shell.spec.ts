@@ -26,9 +26,10 @@ for (const viewport of [
     await expect(page.getByLabel("Title", { exact: true })).toBeEditable();
     await expect(page.getByRole("textbox", { name: "Transcript", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Note actions", exact: true })).toBeEnabled();
+    await expect(page.locator("main")).toHaveCount(1);
+    await expect(page.locator(".vn-landing")).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath("new-note.png"), fullPage: true });
     await expect(page.getByRole("button", { name: "Record", exact: true })).toBeInViewport();
-    await page.getByRole("button", { name: "Note actions", exact: true }).scrollIntoViewIfNeeded();
     await expect(page.getByRole("button", { name: "Note actions", exact: true })).toBeInViewport();
     await page.getByRole("link", { name: "Settings", exact: true }).first().click();
     await expect(page).toHaveURL(/\/settings$/);
@@ -51,6 +52,57 @@ for (const viewport of [
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
   });
+}
+
+for (const width of [760, 761]) {
+  for (const routeType of ["note", "profiles", "profile", "settings"] as const) {
+    test(`${routeType} route Back link is mobile-only at ${width}px`, async ({
+      page,
+      workspace,
+    }) => {
+      const note = workspace.seedNote();
+      const person = workspace.seedPerson();
+      const route = {
+        note: { path: `/notes/${note.id}`, destination: "/", ready: "Title" },
+        profiles: { path: "/profiles", destination: "/", ready: "Search profiles" },
+        profile: {
+          path: `/profiles/${person.id}`,
+          destination: "/profiles",
+          ready: "Display name",
+        },
+        settings: { path: "/settings", destination: "/", ready: null },
+      }[routeType];
+      await page.setViewportSize({ width, height: 640 });
+      await page.goto(route.path);
+      if (route.ready) await expect(page.getByLabel(route.ready, { exact: true })).toBeVisible();
+      else await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+      const back = page
+        .getByRole("main")
+        .getByRole("link", { name: /Back to/, includeHidden: true });
+      await expect(back).toHaveCount(1);
+      await expect(back).toHaveAttribute("href", route.destination);
+      if (width <= 760) {
+        await expect(back).toBeInViewport({ ratio: 1 });
+        await back.click();
+      } else {
+        await expect(back).toBeHidden();
+        const navigation = page.getByRole("navigation", { name: "Workspace", exact: true });
+        const destination = navigation.getByRole("link", {
+          name: route.destination === "/" ? "Home" : "Profiles",
+          exact: true,
+        });
+        await expect(destination).toBeInViewport({ ratio: 1 });
+        await destination.click();
+      }
+      await expect(page).toHaveURL(new RegExp(`${route.destination === "/" ? "/" : "/profiles"}$`));
+      await expect(
+        page.getByRole("heading", {
+          name: route.destination === "/" ? "Home" : "Profiles",
+          exact: true,
+        }),
+      ).toBeVisible();
+    });
+  }
 }
 
 test("direct links restore server notes without incidental generation", async ({

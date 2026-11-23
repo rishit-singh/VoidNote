@@ -258,6 +258,7 @@ export class WorkspaceFixture {
   signOutCount = 0;
   signOutFails = false;
   private completed = new Map<string, NoteRecord | PersonRecord>();
+  private noteTitleCounters = new Map<string, number>();
 
   seedNote(content: Partial<NoteRecord> = {}): NoteRecord {
     const note = noteSchema.parse({
@@ -502,6 +503,11 @@ export class WorkspaceFixture {
       };
       if (collection === "notes") {
         record = noteSchema.parse(fields);
+        if (!previous && !record.title.trim()) {
+          const next = (this.noteTitleCounters.get(record.workspaceId) ?? 0) + 1;
+          this.noteTitleCounters.set(record.workspaceId, next);
+          record.title = `Untitled note (${next})`;
+        }
         this.notes.set(record.id, record);
       } else {
         record = personSchema.parse(fields);

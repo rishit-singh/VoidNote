@@ -135,17 +135,18 @@ export function People({ profileId }: { profileId?: string }) {
 
   return (
     <section
-      className="group/profiles mx-0 flex w-full max-w-none flex-[1_0_auto] flex-col gap-section px-[clamp(24px,4vw,56px)] pb-10 pt-14 [@media(max-width:760px)]:gap-[22px] [@media(max-width:760px)]:px-6 [@media(max-width:760px)]:pb-8 [@media(max-width:760px)]:pt-[30px]"
+      className="group/profiles mx-0 flex min-h-0 w-full max-w-none flex-1 flex-col gap-section overflow-hidden px-[clamp(24px,4vw,56px)] pb-6 pt-14 [@media(max-height:600px)]:!gap-3 [@media(max-height:600px)]:!py-3 [@media(max-width:760px)]:gap-[22px] [@media(max-width:760px)]:px-6 [@media(max-width:760px)]:pt-[30px]"
       data-detail={!!profileId}
       aria-labelledby="profiles-title"
     >
-      <div className="flex min-h-11 items-center justify-between gap-4">
+      <Link
+        href={profileId ? "/profiles" : "/"}
+        className="hidden shrink-0 self-start items-center gap-2 text-vn-muted [@media(max-width:760px)]:inline-flex"
+      >
+        {profileId ? "← Back to profiles" : "← Back to home"}
+      </Link>
+      <div className="flex min-h-11 shrink-0 items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          {profileId && (
-            <Link href="/profiles" className="text-[12px] text-vn-muted">
-              ← Profiles
-            </Link>
-          )}
           <h1
             id="profiles-title"
             className="m-0 text-title text-vn-text [@media(max-width:760px)]:text-[24px]"
@@ -181,10 +182,11 @@ export function People({ profileId }: { profileId?: string }) {
           onChange={(event) => setSearch(event.target.value)}
         />
       </div>
-      <div className="grid grid-cols-[minmax(250px,340px)_minmax(0,1fr)] gap-12 [@media(max-width:1100px)]:grid-cols-[minmax(0,1fr)] [@media(max-width:760px)]:flex [@media(max-width:760px)]:flex-col [@media(max-width:760px)]:gap-[18px]">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(250px,340px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-12 overflow-hidden [@media(max-width:1100px)]:grid-cols-[minmax(0,1fr)] [@media(max-width:760px)]:flex [@media(max-width:760px)]:flex-col [@media(max-width:760px)]:gap-[18px]">
         <aside
-          className="flex flex-col items-stretch [@media(max-width:1100px)]:group-data-[detail=true]/profiles:hidden"
+          className="flex min-h-0 flex-1 flex-col items-stretch overflow-y-auto overscroll-contain [@media(max-width:1100px)]:group-data-[detail=true]/profiles:hidden"
           aria-label="Profiles"
+          tabIndex={0}
         >
           {loading && filteredPeople.length === 0 && (
             <div className="flex flex-col" role="status" aria-label="Loading profiles">
@@ -220,7 +222,7 @@ export function People({ profileId }: { profileId?: string }) {
               key={entry.id}
               href={`/profiles/${encodeURIComponent(entry.id)}`}
               className={cn(
-                "flex min-h-[71px] items-center gap-3 rounded-[3px] p-3 hover:bg-vn-hover",
+                "flex min-h-[71px] shrink-0 items-center gap-3 rounded-[3px] p-3 hover:bg-vn-hover",
                 entry.id === currentId && "bg-vn-hover",
               )}
               aria-current={entry.id === currentId ? "page" : undefined}
@@ -256,7 +258,7 @@ export function People({ profileId }: { profileId?: string }) {
           ))}
           {cursor && (
             <Button
-              className="self-start"
+              className="shrink-0 self-start"
               variant="ghost"
               disabled={loading}
               onClick={() => void results.fetchNextPage()}
@@ -265,59 +267,80 @@ export function People({ profileId }: { profileId?: string }) {
             </Button>
           )}
         </aside>
-        <div className="flex min-w-0 flex-col gap-6 pt-3 [@media(max-width:1100px)]:group-data-[detail=false]/profiles:hidden [@media(max-width:760px)]:border-t [@media(max-width:760px)]:border-vn-stroke [@media(max-width:760px)]:pt-[18px]">
+        <div
+          role="region"
+          aria-label="Profile pane"
+          tabIndex={0}
+          className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain pt-3 [@media(max-width:1100px)]:group-data-[detail=false]/profiles:hidden [@media(max-width:760px)]:border-t [@media(max-width:760px)]:border-vn-stroke [@media(max-width:760px)]:pt-[18px]"
+        >
           {person ? (
             <>
-              <div className="flex items-start justify-between gap-5">
-                <div>
-                  <h2 className="mb-1.5 mt-0 text-[22px] font-normal text-vn-text">
+              <div className="flex shrink-0 items-start justify-between gap-5">
+                <div className="min-w-0">
+                  <h2
+                    className="mb-1.5 mt-0 truncate text-[22px] font-normal text-vn-text"
+                    title={person.displayName || "Untitled profile"}
+                  >
                     {person.displayName || "Untitled profile"}
                   </h2>
-                  <p className="m-0 text-vn-muted">{person.description || "Speaker profile"}</p>
                 </div>
-                <span className="text-vn-muted">{edit?.dirty ? "Unsaved" : ""}</span>
+                <span className="shrink-0 text-vn-muted">{edit?.dirty ? "Unsaved" : ""}</span>
               </div>
-              <fieldset className="flex min-w-0 flex-col gap-2.5 border-0 p-0" disabled={locked}>
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel variant="workspace" className="mt-2" htmlFor="profile-name">
-                      Display name
-                    </FieldLabel>
-                    <Input
-                      variant="workspace"
-                      id="profile-name"
-                      name="displayName"
-                      required
-                      maxLength={200}
-                      value={person.displayName}
-                      onChange={(event) =>
-                        updatePerson({ ...person, displayName: event.target.value })
-                      }
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel variant="workspace" className="mt-2" htmlFor="profile-description">
-                      Description
-                    </FieldLabel>
-                    <Textarea
-                      variant="workspace"
-                      id="profile-description"
-                      name="description"
-                      rows={5}
-                      maxLength={5000}
-                      value={person.description}
-                      onChange={(event) =>
-                        updatePerson({ ...person, description: event.target.value })
-                      }
-                    />
-                  </Field>
-                </FieldGroup>
-              </fieldset>
-              <p className="text-vn-muted">
-                Renaming keeps this profile’s identity across every assigned recording.
-              </p>
-              <SaveControls entityType="person" entityId={person.id} />
-              {personRecords[person.id] && <PersonAppearances personId={person.id} />}
+              <div
+                role="region"
+                aria-label="Profile details"
+                tabIndex={0}
+                className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain [&>*]:shrink-0"
+              >
+                <p className="m-0 whitespace-pre-wrap break-words text-vn-muted">
+                  {person.description || "Speaker profile"}
+                </p>
+                <fieldset className="flex min-w-0 flex-col gap-2.5 border-0 p-0" disabled={locked}>
+                  <FieldGroup>
+                    <Field>
+                      <FieldLabel variant="workspace" className="mt-2" htmlFor="profile-name">
+                        Display name
+                      </FieldLabel>
+                      <Input
+                        variant="workspace"
+                        id="profile-name"
+                        name="displayName"
+                        required
+                        maxLength={200}
+                        value={person.displayName}
+                        onChange={(event) =>
+                          updatePerson({ ...person, displayName: event.target.value })
+                        }
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel
+                        variant="workspace"
+                        className="mt-2"
+                        htmlFor="profile-description"
+                      >
+                        Description
+                      </FieldLabel>
+                      <Textarea
+                        variant="workspace"
+                        id="profile-description"
+                        name="description"
+                        rows={5}
+                        maxLength={5000}
+                        value={person.description}
+                        onChange={(event) =>
+                          updatePerson({ ...person, description: event.target.value })
+                        }
+                      />
+                    </Field>
+                  </FieldGroup>
+                </fieldset>
+                <p className="text-vn-muted">
+                  Renaming keeps this profile’s identity across every assigned recording.
+                </p>
+                <SaveControls entityType="person" entityId={person.id} />
+                {personRecords[person.id] && <PersonAppearances personId={person.id} />}
+              </div>
             </>
           ) : profileId ? (
             unavailable[`person:${profileId}`] ? (
@@ -335,9 +358,6 @@ export function People({ profileId }: { profileId?: string }) {
                   </EmptyDescription>
                 </EmptyHeader>
                 <div className="flex flex-wrap gap-2">
-                  <Button asChild variant="outline">
-                    <Link href="/profiles">Back to profiles</Link>
-                  </Button>
                   <Button variant="ghost" onClick={() => void detail.refetch()}>
                     Retry
                   </Button>
@@ -348,9 +368,6 @@ export function People({ profileId }: { profileId?: string }) {
                 <AlertDescription className="flex flex-col items-start gap-3">
                   <span>{recordError}</span>
                   <div className="flex gap-2">
-                    <Button asChild variant="outline">
-                      <Link href="/profiles">Back to profiles</Link>
-                    </Button>
                     <Button variant="ghost" onClick={() => void detail.refetch()}>
                       Retry
                     </Button>
@@ -361,9 +378,6 @@ export function People({ profileId }: { profileId?: string }) {
               <div className="flex min-h-[180px] items-center text-vn-muted" role="status">
                 <Skeleton className="h-16 w-full" />
                 <p>Loading profile…</p>
-                <Button asChild variant="ghost">
-                  <Link href="/profiles">Back to profiles</Link>
-                </Button>
               </div>
             )
           ) : (

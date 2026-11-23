@@ -5,6 +5,7 @@ import { assetUrls } from "@/assets";
 import { mono, monoItalic } from "@/assets/fonts";
 import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/components/query-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
   title: "VoidNote",
@@ -33,6 +34,7 @@ export default function RootLayout({
       <body>
         <ThemeProvider defaultTheme="dark" storageKey="voidnote-theme">
           <QueryProvider>{children}</QueryProvider>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

@@ -20,8 +20,10 @@ Its verification and deployment status are separate from the deployed evidence b
 - New recording initialization is serialized per note and rejects a second audio
   identity while allowing exact retries. Existing data is retained. A read-only
   production check found no notes with multiple non-deleted remote recordings.
-- Duplicate copies audio to a new note and processes it again. Start over creates
-  a new empty note without deleting the original.
+- The November 23 UX follow-up removes Duplicate. Start over creates a new empty
+  note without deleting the original; its first save receives a numbered untitled
+  name. See [the implementation notes](2026-11-23-workspace-ux.md) for verification
+  and release status.
 - Autosave retains exact pending commands and newer drafts separately. Conflicts
   ask which version to keep without exposing revision numbers.
 

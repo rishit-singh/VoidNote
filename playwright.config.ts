@@ -1,6 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = "http://127.0.0.1:8788";
+const previewPort = Number(process.env.PLAYWRIGHT_PORT ?? 8788);
+if (!Number.isInteger(previewPort) || previewPort < 1024 || previewPort > 65535) {
+  throw new Error("PLAYWRIGHT_PORT must be an integer between 1024 and 65535.");
+}
+const baseURL = `http://127.0.0.1:${previewPort}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -23,13 +27,13 @@ export default defineConfig({
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     {
       name: "webkit",
-      testMatch: "upload-compatibility.spec.ts",
+      testMatch: ["upload-compatibility.spec.ts", "shell.spec.ts"],
       use: { ...devices["Desktop Safari"] },
     },
   ],
   webServer: {
     // build:worker must run first; this serves its output through workerd.
-    command: "bun run preview:worker --env production --ip 127.0.0.1 --port 8788",
+    command: `bun run preview:worker --env production --ip 127.0.0.1 --port ${previewPort}`,
     url: baseURL,
     // A dev server on this port must never stand in for the Worker preview.
     reuseExistingServer: false,

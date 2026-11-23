@@ -52,10 +52,12 @@ export function prepareNoteCommand(
   note: NoteModel,
   command: DeleteCommand,
   generation: number,
+  titleGeneration: number,
 ): Extract<NonNullable<EditState["pending"]>, { kind: "note" }> {
   return {
     kind: "note",
     generation,
+    titleGeneration,
     command: saveNoteSchema.parse({
       ...command,
       content: {
@@ -179,7 +181,8 @@ export function createNoteDraftActions({ get, set, isReady, cleanEdit }: NoteDra
       return;
     }
 
-    const contentChanged = note.title !== existing.title || note.transcript !== existing.transcript;
+    const titleChanged = note.title !== existing.title;
+    const contentChanged = titleChanged || note.transcript !== existing.transcript;
     // Recorder callbacks may arrive while a save is pending. Keep them and use
     // generation tracking so the response cannot replace the newer draft.
     set({
@@ -194,6 +197,7 @@ export function createNoteDraftActions({ get, set, isReady, cleanEdit }: NoteDra
           ...edit,
           dirty: edit.dirty || contentChanged,
           generation: edit.generation + (contentChanged ? 1 : 0),
+          titleGeneration: (edit.titleGeneration ?? 0) + (titleChanged ? 1 : 0),
         },
       },
     });

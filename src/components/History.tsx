@@ -9,18 +9,13 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/u
 import { Skeleton } from "@/components/ui/skeleton";
 import { workspaceApi } from "@/lib/workspace-api";
 import { useNoteStore } from "@/stores/use-note-store";
+import { runEntityAction } from "@/lib/action-toasts";
 
 type Entity = "note" | "person";
 type HistoryPage = Awaited<ReturnType<typeof workspaceApi.history>>;
 
 export function SaveControls({ entityType, entityId }: { entityType: Entity; entityId: string }) {
   const edit = useNoteStore((state) => state.edits[`${entityType}:${entityId}`]);
-  const saveNote = useNoteStore((state) => state.saveNote);
-  const savePerson = useNoteStore((state) => state.savePerson);
-  const deleteNote = useNoteStore((state) => state.deleteNote);
-  const deletePerson = useNoteStore((state) => state.deletePerson);
-  const resolveConflict = useNoteStore((state) => state.resolveConflict);
-  const retry = useNoteStore((state) => state.retry);
   if (!edit) return null;
 
   return (
@@ -32,7 +27,7 @@ export function SaveControls({ entityType, entityId }: { entityType: Entity; ent
           aria-label={`Save ${entityType === "person" ? "profile" : "note"}`}
           title="Save"
           disabled={edit.saving || !!edit.pending || edit.conflict !== null || !edit.dirty}
-          onClick={() => void (entityType === "note" ? saveNote(entityId) : savePerson(entityId))}
+          onClick={() => void runEntityAction(entityType, entityId, "save")}
         >
           <Save />
         </Button>
@@ -43,9 +38,7 @@ export function SaveControls({ entityType, entityId }: { entityType: Entity; ent
           aria-label={`Delete ${entityType === "person" ? "profile" : "note"}`}
           title="Delete"
           disabled={edit.saving || !!edit.pending || edit.conflict !== null}
-          onClick={() =>
-            void (entityType === "note" ? deleteNote(entityId) : deletePerson(entityId))
-          }
+          onClick={() => void runEntityAction(entityType, entityId, "delete")}
         >
           <Trash2 />
         </Button>
@@ -69,7 +62,10 @@ export function SaveControls({ entityType, entityId }: { entityType: Entity; ent
           <p className="text-sm text-muted-foreground">
             Could not confirm the save. Your changes are kept here.
           </p>
-          <Button variant="outline" onClick={() => void retry(entityType, entityId)}>
+          <Button
+            variant="outline"
+            onClick={() => void runEntityAction(entityType, entityId, "retry")}
+          >
             Retry pending change
           </Button>
         </div>
@@ -84,14 +80,14 @@ export function SaveControls({ entityType, entityId }: { entityType: Entity; ent
             <Button
               variant="outline"
               disabled={edit.saving}
-              onClick={() => void resolveConflict(entityType, entityId, false)}
+              onClick={() => void runEntityAction(entityType, entityId, "use-latest")}
             >
               Reload and discard draft
             </Button>
             <Button
               variant="secondary"
               disabled={edit.saving}
-              onClick={() => void resolveConflict(entityType, entityId, true)}
+              onClick={() => void runEntityAction(entityType, entityId, "keep-draft")}
             >
               Rebase and keep draft
             </Button>

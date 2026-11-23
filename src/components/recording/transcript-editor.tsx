@@ -119,7 +119,7 @@ function ScopedTranscriptEditor({ noteId, runId, onSeek }: Props) {
       ref={heading}
       tabIndex={-1}
       aria-label="Corrected transcript"
-      className="flex flex-col gap-6"
+      className="flex min-w-0 flex-col gap-6"
     >
       <div className="flex justify-end">
         <TranscriptDownload noteId={noteId} runId={runId} disabled={locked} />
@@ -168,7 +168,7 @@ function ScopedTranscriptEditor({ noteId, runId, onSeek }: Props) {
           const turn = passage.turns[0]!;
           return (
             <li key={passage.id} className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="ghost"
                   size="sm"

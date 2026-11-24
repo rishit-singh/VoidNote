@@ -299,6 +299,9 @@ test("headerless WebM uploads, plays and reloads without extreme duration seeks"
       await route.fulfill({ json: recording });
     } else if (path.endsWith("/audio") && request.method() === "PUT") {
       await route.continue({ url: uploadReceiver.url });
+    } else if (path === `/recordings/${recording?.id}/audio` && request.method() === "GET") {
+      // Reload can select saved audio before local recording hydration completes.
+      await route.fulfill({ contentType: "audio/webm", body: bytes });
     } else if (path === "/processing" && request.method() === "POST" && recording) {
       submissions += 1;
       await route.fulfill({

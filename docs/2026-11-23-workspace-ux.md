@@ -118,3 +118,12 @@ formatting and whitespace checks passed, along with 48 existing layout, navigati
 and preferences browser checks (Chromium and WebKit navigation). Reviewed desktop
 Home/profile and mobile transcript/Settings screenshots. Transport remains mocked;
 physical-device scrollbar and keyboard behavior are separate acceptance evidence.
+
+PR #16 merged the spacing change as `25deb66379fdf0e9acdd4a5c31efecdca0c58b4c`.
+Its first production run exhausted the job timeout after system-package downloads
+took nearly 29 minutes. The retry exposed a missing GET-audio mock in the WebKit
+headerless-WebM reload test: saved audio can be selected before local recording
+hydration completes. The fixture now serves the uploaded WebM bytes at that
+recording's audio URL. The failed runs did not deploy.
+The corrected reload test passed three consecutive runs in each of Chromium and
+WebKit (six checks total), with scoped lint and formatting also passing.

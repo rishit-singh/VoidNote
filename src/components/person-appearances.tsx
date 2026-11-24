@@ -59,7 +59,7 @@ function ScopedAppearances({ personId, workspaceId }: { personId: string; worksp
         role="region"
         aria-label="Appearance list"
         tabIndex={0}
-        className="flex max-h-[50dvh] min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain [&>*]:shrink-0"
+        className="mr-2 flex max-h-[50dvh] min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain pr-3 [&>*]:shrink-0"
       >
         {error && (
           <Alert variant="destructive">

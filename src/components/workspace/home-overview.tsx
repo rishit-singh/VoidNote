@@ -93,7 +93,7 @@ export function RecentRecordings({ overview }: { overview: OverviewQuery }) {
         role="region"
         aria-label="Recent recordings list"
         tabIndex={0}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        className="mr-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-3"
       >
         {!recordings && !overview.isError && (
           <div role="status" aria-label="Loading recent recordings">

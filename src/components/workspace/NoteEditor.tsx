@@ -66,7 +66,7 @@ export function NoteEditor({
           role="region"
           aria-label="Note status"
           tabIndex={0}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain [@media(max-height:480px)]:min-h-16 [@media(max-height:480px)]:shrink-0"
+          className="mr-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-3 [@media(max-height:480px)]:min-h-16 [@media(max-height:480px)]:shrink-0"
         >
           {unavailable ? (
             <Empty className="min-h-80 border-0 px-2 py-6 md:px-2 md:py-6">
@@ -168,7 +168,7 @@ export function NoteEditor({
         </TabsList>
         <TabsContent
           value="transcript"
-          className="mt-0 min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          className="mr-2 mt-0 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-3"
         >
           <NoteAudio noteId={note.id} />
           {!!note.revision && (
@@ -187,7 +187,7 @@ export function NoteEditor({
         </TabsContent>
         <TabsContent
           value="summary"
-          className="mt-0 min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          className="mr-2 mt-0 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-3"
         >
           <NoteAudio noteId={note.id} />
           <div

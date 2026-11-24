@@ -184,7 +184,7 @@ export function People({ profileId }: { profileId?: string }) {
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(250px,340px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-12 overflow-hidden [@media(max-width:1100px)]:grid-cols-[minmax(0,1fr)] [@media(max-width:760px)]:flex [@media(max-width:760px)]:flex-col [@media(max-width:760px)]:gap-[18px]">
         <aside
-          className="flex min-h-0 flex-1 flex-col items-stretch overflow-y-auto overscroll-contain [@media(max-width:1100px)]:group-data-[detail=true]/profiles:hidden"
+          className="mr-2 flex min-h-0 flex-1 flex-col items-stretch overflow-y-auto overscroll-contain pr-3 [@media(max-width:1100px)]:group-data-[detail=true]/profiles:hidden"
           aria-label="Profiles"
           tabIndex={0}
         >
@@ -271,7 +271,7 @@ export function People({ profileId }: { profileId?: string }) {
           role="region"
           aria-label="Profile pane"
           tabIndex={0}
-          className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain pt-3 [@media(max-width:1100px)]:group-data-[detail=false]/profiles:hidden [@media(max-width:760px)]:border-t [@media(max-width:760px)]:border-vn-stroke [@media(max-width:760px)]:pt-[18px]"
+          className="mr-2 flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain pr-3 pt-3 [@media(max-width:1100px)]:group-data-[detail=false]/profiles:hidden [@media(max-width:760px)]:border-t [@media(max-width:760px)]:border-vn-stroke [@media(max-width:760px)]:pt-[18px]"
         >
           {person ? (
             <>
@@ -290,7 +290,7 @@ export function People({ profileId }: { profileId?: string }) {
                 role="region"
                 aria-label="Profile details"
                 tabIndex={0}
-                className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain [&>*]:shrink-0"
+                className="mr-2 flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain pr-3 [&>*]:shrink-0"
               >
                 <p className="m-0 whitespace-pre-wrap break-words text-vn-muted">
                   {person.description || "Speaker profile"}

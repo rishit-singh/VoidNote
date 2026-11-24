@@ -72,7 +72,7 @@ export function HomeView() {
         role="region"
         aria-label="Home content"
         tabIndex={0}
-        className="flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto overscroll-contain min-[1100px]:overflow-hidden [@media(max-height:600px)]:!overflow-y-auto"
+        className="mr-2 flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto overscroll-contain pr-3 min-[1100px]:mr-0 min-[1100px]:overflow-hidden min-[1100px]:pr-0 [@media(max-height:600px)]:!mr-2 [@media(max-height:600px)]:!overflow-y-auto [@media(max-height:600px)]:!pr-3"
       >
         <HomeMetrics overview={overview} />
         <div className="grid min-h-0 min-w-0 shrink-0 grid-cols-1 gap-8 min-[1100px]:flex-1 min-[1100px]:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)] min-[1100px]:grid-rows-[minmax(0,1fr)] min-[1100px]:gap-10 [@media(min-width:1100px)_and_(max-height:600px)]:min-h-[280px]">
@@ -108,7 +108,7 @@ export function HomeView() {
               role="region"
               aria-label="Notes list"
               tabIndex={0}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+              className="mr-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-3"
             >
               {notesLoading && visibleNotes.length === 0 && (
                 <div className="flex flex-col" role="status" aria-label="Loading notes">

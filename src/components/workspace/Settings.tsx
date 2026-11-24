@@ -34,7 +34,7 @@ export function Settings() {
         role="region"
         aria-label="Settings content"
         tabIndex={0}
-        className="flex min-h-0 max-w-[800px] flex-1 flex-col gap-[26px] overflow-y-auto overscroll-contain"
+        className="mr-2 flex min-h-0 max-w-[800px] flex-1 flex-col gap-[26px] overflow-y-auto overscroll-contain pr-3"
       >
         <section
           className="flex shrink-0 flex-col gap-4 border-b border-vn-stroke pb-6"

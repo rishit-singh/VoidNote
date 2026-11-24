@@ -208,7 +208,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
                 role="region"
                 aria-label="Recent notes list"
                 tabIndex={0}
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                className="mr-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-3"
               >
                 {recentNotes.map((item) => (
                   <Link

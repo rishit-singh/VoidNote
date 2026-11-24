@@ -23,8 +23,12 @@
 
 ## Verification and delivery
 
-Implemented and verified locally. Production delivery is authorized and being
-prepared through a checked PR and the main-branch CI workflow.
+Deployed through PR #15 as commit `54c3bd9a04f89aaf3484ab702a58d356a81f3708`,
+Cloudflare version `efde5d10-5d70-4056-a5d1-e5fe35a957c3`.
+[Production CI](https://github.com/rishit-singh/VoidNote/actions/runs/45280235135)
+passed all checks, deployment and health smoke. PR CI passed 219 database/unit
+tests and 146 browser tests. A separate `https://voidnote.app/api/health` request
+also returned `status: ok`.
 
 The isolated PostgreSQL/unit suite passed 208 tests, including concurrent title allocation,
 exact retries, rollback, workspace isolation and draft acknowledgement races.
@@ -79,6 +83,10 @@ checksum discrepancy remains untouched.
 After reconciliation, Drizzle's snapshot/journal check passed and all 31 repository
 tests passed against a fresh isolated PostgreSQL database using the renamed migration.
 
+Production migration `0007` was applied before merge and verified read-only: all
+seven prior ledger records remained unchanged, row-level security and all three
+constraints are present, and PUBLIC/anon/authenticated have no table grants.
+
 The AI branch owner must integrate this released baseline before delivery:
 
 | Future tag                        | Journal index | Preserved timestamp |
@@ -95,3 +103,18 @@ The foundation snapshot must descend from UX snapshot
 domains into the schema. Changing only journal indices or parent IDs is insufficient.
 Check shared-environment ledgers before integration; never rewrite applied SQL or
 ledger rows. The independently owned AI worktree was not modified for this release.
+
+## Scrollbar spacing follow-up
+
+The user requested more space around the new independent scroll panes. Native
+scroll containers now use Tailwind `pr-3` for 12px content clearance and `mr-2`
+for an 8px inset from their containing edge, across Home, notes, profiles,
+appearances, Settings and sidebar recent notes. Home applies its outer spacing
+only at widths/heights where that outer region scrolls.
+
+The follow-up preserves existing scroll ownership and header/recorder positioning.
+Static independent review found no blockers. The Worker build, scoped ESLint,
+formatting and whitespace checks passed, along with 48 existing layout, navigation
+and preferences browser checks (Chromium and WebKit navigation). Reviewed desktop
+Home/profile and mobile transcript/Settings screenshots. Transport remains mocked;
+physical-device scrollbar and keyboard behavior are separate acceptance evidence.

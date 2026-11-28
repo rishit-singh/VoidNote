@@ -88,9 +88,15 @@ const writeTools: ReadonlySet<string> = new Set([
   "research_cancel",
 ]);
 
-function definitiveToolRejection(name: AssistantToolName, error: unknown): error is WorkspaceError {
+function definitiveToolRejection(
+  name: AssistantToolName,
+  error: unknown,
+  v6ResearchAdmission = false,
+): error is WorkspaceError {
   return (
-    (readTools.has(name) || transactionalWriteTools.has(name)) &&
+    (readTools.has(name) ||
+      transactionalWriteTools.has(name) ||
+      (name === "research_dispatch" && v6ResearchAdmission)) &&
     error instanceof WorkspaceError &&
     ["forbidden", "not_found", "conflict", "invalid_cursor"].includes(error.code)
   );
@@ -932,7 +938,12 @@ ${continuity} When a tool explicitly invalidates or supersedes a source, disrega
     } catch (error) {
       // Once the service returned, a malformed/oversized acknowledgement or local
       // persistence failure cannot establish that a committed mutation rolled back.
-      if (!serviceReturned && definitiveToolRejection(name, error)) {
+      // V6 research admission is transactional; its post-acceptance callback errors
+      // are settled before returning and cannot reach this catch.
+      const v6ResearchAdmission =
+        name === "research_dispatch" && execution.policy.skillVersion === "assistant-skills-v6";
+
+      if (!serviceReturned && definitiveToolRejection(name, error, v6ResearchAdmission)) {
         const guidance =
           error.code === "forbidden"
             ? "Access denied; do not bypass authorization."

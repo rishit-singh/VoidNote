@@ -131,6 +131,37 @@ void test("errors and uncertain outcomes are visible without exporting content o
   assert.equal(bodies.length, 2);
 });
 
+void test("wrapped database failures export only bounded cause classes and SQLSTATE", async (t) => {
+  const { mf, bodies } = start(t);
+  const response = await mf.dispatchFetch("https://app.test/wrapped-failure");
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { sameError: false });
+  const body = bodies[0]!;
+  assert.doesNotMatch(body, /PRIVATE|23505.*SQL|provider token/);
+  const failure = spans(body).find((span) => span.name === "research.persistence.save-finding")!;
+  const attributes = failure.attributes.map((attribute) => [
+    attribute.key,
+    attribute.value.stringValue,
+  ]);
+  assert.deepEqual(
+    attributes.filter(([key]) => key === "voidnote.error.cause_type").map(([, value]) => value),
+    ["Error"],
+  );
+  assert.ok(attributes.some(([key, value]) => key === "db.sqlstate" && value === "23505"));
+});
+
+void test("WorkspaceError exposes only an allowlisted domain code", async (t) => {
+  const { mf, bodies } = start(t);
+  const response = await mf.dispatchFetch("https://app.test/workspace-error");
+  assert.equal(response.status, 503);
+  const body = bodies[0]!;
+  assert.doesNotMatch(body, /PRIVATE|workspace message/);
+  const failure = spans(body).find((span) => span.name === "research.workflow")!;
+  const attributes = new Map(failure.attributes.map(({ key, value }) => [key, value.stringValue]));
+  assert.equal(attributes.get("error.type"), "WorkspaceError");
+  assert.equal(attributes.get("voidnote.error.domain_code"), "forbidden");
+});
+
 void test("missing credentials and collector failure preserve successful work", async (t) => {
   const disabled = start(t, false);
   const failing = start(t, true, true);

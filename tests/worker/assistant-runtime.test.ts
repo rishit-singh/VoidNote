@@ -1419,8 +1419,90 @@ for (const error of [
   });
 }
 
-void test("composite research errors do not infer rollback from a typed conflict", async (t) => {
+void test("research admission conflicts are definitive and allow a corrected dispatch", async (t) => {
+  const input = {
+    question: "Compare two official mission pages.",
+    sourceUrls: ["https://example.com/curiosity", "https://example.com/perseverance"],
+    discoverSources: false,
+    noteId,
+  };
   const worker = fixture(t, {
+    skillVersion: "assistant-skills-v6",
+    tools: [
+      { name: "research_dispatch", input },
+      { name: "research_dispatch", input: { ...input, question: "Compare mission objectives." } },
+    ],
+    toolErrors: [{ code: "conflict", message: "Research is not configured." }],
+    toolOutputs: [
+      {
+        summary: "Research accepted.",
+        data: { id: "8a4a4800-303d-46d2-91fb-eeb0d65fd9f2", status: "queued" },
+        sources: [],
+      },
+    ],
+  });
+  await worker.dispatch("/start");
+  await worker.settled();
+  const completion = completionSchema.parse(worker.completions[0]);
+  assert.deepEqual(
+    completion.tools.map((entry) => entry.status),
+    ["failed", "succeeded"],
+  );
+  assert.match(completion.tools[0]!.summary, /Research is not configured/);
+  const calls = z
+    .array(z.tuple([z.string(), z.unknown(), z.object({ operationId: z.string() })]))
+    .parse(worker.toolCalls);
+  assert.equal(calls.length, 2);
+  assert.notEqual(calls[0]![2].operationId, calls[1]![2].operationId);
+});
+
+void test("V6 unknown research dispatch outcomes remain uncertain", async (t) => {
+  const worker = fixture(t, {
+    skillVersion: "assistant-skills-v6",
+    toolSteps: [
+      [{ name: "activate_skill", input: { name: "research-dispatch" } }],
+      [{ name: "research_lookup", input: { query: "mission pages" } }],
+      [
+        {
+          name: "research_dispatch",
+          input: {
+            question: "Compare two official mission pages.",
+            sourceUrls: ["https://example.com/curiosity"],
+            discoverSources: false,
+            noteId,
+          },
+        },
+      ],
+      [],
+    ],
+    toolOutputs: [
+      {
+        summary: "No matching saved research was found.",
+        data: { runs: [], savedContactResearch: { items: [] } },
+        sources: [],
+      },
+    ],
+    toolErrors: [null, { code: "service_unavailable", message: "Connection lost." }],
+  });
+  await worker.dispatch("/start");
+  await worker.settled();
+  assert.deepEqual(
+    completionSchema.parse(worker.completions[0]).tools.map((entry) => entry.status),
+    ["succeeded", "uncertain"],
+  );
+  const calls = z
+    .array(z.tuple([z.string(), z.unknown(), z.object({ operationId: z.string() })]))
+    .parse(worker.toolCalls);
+  assert.deepEqual(
+    calls.map((call) => call[0]),
+    ["research_lookup", "research_dispatch"],
+  );
+  assert.equal(calls.length, 2);
+});
+
+void test("legacy composite research conflicts remain uncertain", async (t) => {
+  const worker = fixture(t, {
+    skillVersion: "assistant-skills-v1",
     tool: {
       name: "research_dispatch",
       input: {
@@ -1435,6 +1517,26 @@ void test("composite research errors do not infer rollback from a typed conflict
       },
     },
     toolErrors: [{ code: "conflict", message: "Post-acceptance failure" }],
+  });
+  await worker.dispatch("/start");
+  await worker.settled();
+  assert.equal(completionSchema.parse(worker.completions[0]).tools[0]!.status, "uncertain");
+  assert.equal(worker.toolCalls.length, 1);
+});
+
+void test("V6 research admission errors do not classify untyped codes as definitive", async (t) => {
+  const worker = fixture(t, {
+    skillVersion: "assistant-skills-v6",
+    tool: {
+      name: "research_dispatch",
+      input: {
+        question: "Compare two official mission pages.",
+        sourceUrls: ["https://example.com/curiosity"],
+        discoverSources: false,
+        noteId,
+      },
+    },
+    toolErrors: [{ code: "conflict", message: "Untrusted conflict code.", untyped: true }],
   });
   await worker.dispatch("/start");
   await worker.settled();

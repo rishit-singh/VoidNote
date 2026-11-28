@@ -1,5 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { trace } from "@opentelemetry/api";
+import { ZodError } from "zod";
+import { WorkspaceError } from "../contracts/workspace";
 import type { ResearchExtractionFailureCode } from "../ai/research";
 
 type Scope = {
@@ -65,6 +67,7 @@ const executions = new AsyncLocalStorage<Context>();
 const uuid = /^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
 const operation = /^[a-z][a-z0-9_.-]{0,79}$/;
 const MAX_SPANS = 256;
+const MAX_ERROR_CAUSES = 5;
 const EXPORT_TIMEOUT_MS = 800;
 
 function id(bytes: number): string {
@@ -108,10 +111,58 @@ function identifiers(scope: Scope): Attribute[] {
 /** Stable categories only: provider/database messages may contain source content. */
 function errorType(error: unknown): string {
   if (!(error instanceof Error)) return "unknown";
-  if (["AbortError", "TimeoutError", "TypeError", "SyntaxError", "ZodError"].includes(error.name)) {
-    return error.name;
-  }
+  if (error instanceof WorkspaceError) return "WorkspaceError";
+  if (error instanceof TypeError) return "TypeError";
+  if (error instanceof SyntaxError) return "SyntaxError";
+  if (error instanceof ZodError) return "ZodError";
+  if (error instanceof DOMException && error.name === "AbortError") return "AbortError";
+  if (error instanceof DOMException && error.name === "TimeoutError") return "TimeoutError";
   return "Error";
+}
+
+const workspaceErrorCodes = new Set(["forbidden", "not_found", "conflict", "invalid_cursor"]);
+
+/** Export only bounded exception metadata; never messages or arbitrary properties. */
+function safeCauseAttributes(error: unknown): Attribute[] {
+  const attributes = new Map<string, Attribute>();
+  const seen = new Set<object>();
+  let current: unknown = error;
+  let causeCount = 0;
+  while (current instanceof Error && causeCount < MAX_ERROR_CAUSES) {
+    let cause: unknown;
+    try {
+      cause = Reflect.get(current, "cause");
+    } catch {
+      break;
+    }
+    if ((typeof cause !== "object" && typeof cause !== "function") || cause === null) break;
+    if (seen.has(cause)) break;
+    seen.add(cause);
+    causeCount += 1;
+
+    try {
+      if (cause instanceof Error) {
+        attributes.set(
+          "voidnote.error.cause_type",
+          text("voidnote.error.cause_type", errorType(cause)),
+        );
+      }
+      if (cause instanceof WorkspaceError && workspaceErrorCodes.has(cause.code)) {
+        attributes.set(
+          "voidnote.error.domain_code",
+          text("voidnote.error.domain_code", cause.code),
+        );
+      }
+      const code: unknown = Reflect.get(cause, "code");
+      if (typeof code === "string" && /^[A-Z0-9]{5}$/.test(code)) {
+        attributes.set("db.sqlstate", text("db.sqlstate", code));
+      }
+    } catch {
+      // Ignore exotic property accessors; diagnostics must never change domain behavior.
+    }
+    current = cause;
+  }
+  return [...attributes.values()];
 }
 
 function config(env: unknown): { endpoint: string; token: string; environment?: string } | null {
@@ -281,6 +332,10 @@ export async function executionTrace<T>(
     } catch (error) {
       failed = true;
       attributes.push(text("error.type", errorType(error)));
+      if (error instanceof WorkspaceError && workspaceErrorCodes.has(error.code)) {
+        attributes.push(text("voidnote.error.domain_code", error.code));
+      }
+      attributes.push(...safeCauseAttributes(error));
       throw error;
     } finally {
       context.ended = true;

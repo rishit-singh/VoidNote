@@ -1,4 +1,5 @@
 import { executionTrace, tracedOperations } from "../../src/telemetry/execution";
+import { WorkspaceError } from "../../src/contracts/workspace";
 
 const scope = {
   workspaceId: "11111111-1111-4111-8111-111111111111",
@@ -26,6 +27,11 @@ export default {
         );
         return Response.json(result);
       }
+      if (mode === "/workspace-error") {
+        await executionTrace(env, scope, "research.workflow", () =>
+          Promise.reject(new WorkspaceError("forbidden", "PRIVATE workspace message")),
+        );
+      }
       if (mode === "/detached" || mode === "/after-root") {
         const gate = Promise.withResolvers<void>();
         let late: Promise<unknown> | undefined;
@@ -46,6 +52,14 @@ export default {
           async saveFinding() {
             await Promise.resolve();
             if (mode === "/failure") throw expected;
+            if (mode === "/wrapped-failure") {
+              const databaseError = Object.assign(
+                new Error("PRIVATE SQL, bind values, prompt, and provider token"),
+                { code: "23505" },
+              );
+              const wrapped = new Error("PRIVATE wrapper message", { cause: databaseError });
+              throw new Error("PRIVATE outer message", { cause: wrapped });
+            }
             return { status: mode === "/uncertain" ? "uncertain" : "completed", text: "PRIVATE" };
           },
         });

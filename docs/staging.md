@@ -31,7 +31,8 @@ The GitHub `staging` environment needs:
 
 The Worker needs separate staging auth settings and secrets, a staging
 Hyperdrive, and the bindings declared under `env.staging` in `wrangler.jsonc`.
-Paid inference remains disabled until model, rates and allowance are configured.
+Assistant and direct research inference are enabled for the synthetic acceptance
+workspace with approved rates and allowances; see [admin operations](admin.md).
 
 ## Provisioning status
 
@@ -50,8 +51,8 @@ Created during setup:
 Application migrations through `0020` and deployment succeeded in
 [CI run 46116957015](https://github.com/rishit-singh/VoidNote/actions/runs/46116957015).
 
-- Deployed commit: `afc7449`.
-- Cloudflare version: `149de844-ae4f-40e2-98a6-f17b0a422ee6`.
+- Deployed commit: `9cb2842`, CI run `46120515148`.
+- Cloudflare version: `3add548d-ec7f-4bad-852b-5ae31fa69abb`.
 - Hosted homepage and health endpoint return HTTP 200.
 - Unauthenticated session requests return HTTP 401.
 - Chromium renders the landing page and sign-in dialog.
@@ -68,8 +69,23 @@ disabled research admission remains HTTP 409. Thread-scoped listing was not
 exercised in this hosted check.
 
 Google OAuth is not
-configured for this separate Supabase project. Inference and discovery remain
-disabled; deployment does not establish real-provider research acceptance.
+configured for this separate Supabase project. The later `9cb2842` deployment
+enabled assistant and direct research with $1/$3 allowances respectively from
+the user's $5 total approval. The earlier HTTP 409 evidence above predates this
+enablement. Discovery remains disabled without an application Firecrawl key;
+$1 is reserved but unallocated. Logfire staging-only secrets are configured;
+the secret update produced Worker version `7cf9565e-3afc-4125-b069-01507ba5b45a`
+from application commit `9cb2842`. In `rishit-singh/dev`, synthetic trace
+`8598bc875dc8ae32ab4bfd5d260f359f` and hosted health trace
+`684a34bc8c9cb7ebbc9a01dd0905afaa` were confirmed with service `voidnote` and
+environment `staging`.
+
+Real browser authentication and note creation passed. The first paid assistant
+research request failed acceptance: turn `04176cba-c7c9-4929-a149-23bb101dae43`
+completed, but research dispatch returned uncertain and no research run was
+persisted. The browser timed out awaiting a research task. Root-cause diagnosis
+is in progress; report quality/reuse/recovery acceptance remains outstanding.
+Deployment and health telemetry do not establish full research acceptance.
 
 ## Acceptance
 

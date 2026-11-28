@@ -12,6 +12,15 @@ const fixture = {
         );
         return Response.json({ unexpected: "retrieval permitted" });
       }
+      if (new URL(request.url).pathname === "/oversized-limit") {
+        await createWorkerPublicSourceTransport().request(
+          new URL("https://simonwillison.net/about/"),
+          ["8.8.8.8"],
+          512_001,
+          AbortSignal.timeout(1000),
+        );
+        return Response.json({ unexpected: "oversized limit permitted" });
+      }
       const addresses = await createWorkerPublicSourceTransport().resolve(
         "simonwillison.net",
         AbortSignal.timeout(1000),

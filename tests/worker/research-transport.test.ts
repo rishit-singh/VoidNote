@@ -109,3 +109,11 @@ void test("pinned-IP retrieval rejects prohibited destinations without an unpinn
   });
   assert.deepEqual(requests, [], "No unpinned fetch fallback is allowed.");
 });
+
+void test("pinned transport rejects response limits above the global cap before connecting", async () => {
+  const response = await worker.dispatchFetch("http://localhost/oversized-limit");
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), {
+    error: "Source response byte limit is invalid.",
+  });
+});

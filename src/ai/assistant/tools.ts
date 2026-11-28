@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { DEFAULT_RESEARCH_RUN_MAX_QUESTIONS } from "../../config/research-runs";
 import {
   assistantSourceSchema,
   createAssistantArtifactSchema,
@@ -257,7 +258,10 @@ export const assistantToolSchemasV6 = {
   research_dispatch: z
     .object({
       question: requestResearchRunSchema.shape.question,
-      subquestions: requestResearchRunSchema.shape.subquestions,
+      subquestions: z
+        .array(requestResearchRunSchema.shape.subquestions.unwrap().element)
+        .max(DEFAULT_RESEARCH_RUN_MAX_QUESTIONS - 1)
+        .default([]),
       noteId: requestResearchRunSchema.shape.noteId,
       personId: requestResearchRunSchema.shape.personId,
       sourceUrls: requestResearchRunSchema.shape.sourceUrls,

@@ -95,6 +95,23 @@ void test(
         assert.equal(tlsError.cert.fingerprint256, correctCertificate.fingerprint256);
         return true;
       });
+
+      for (const path of ["/nasa-curiosity", "/nasa-perseverance"]) {
+        const nasaResponse = await worker.dispatchFetch(`http://localhost${path}`);
+        const nasaResult = (await nasaResponse.json()) as {
+          status: number;
+          tlsAndHttpSucceeded: boolean;
+          rawResponseBytes: number;
+          extractedTextBytes?: number;
+          error?: string;
+        };
+        assert.equal(nasaResult.status, 200, nasaResult.error);
+        assert.equal(nasaResult.tlsAndHttpSucceeded, true);
+        assert.ok(nasaResult.rawResponseBytes > 128_000);
+        assert.ok(nasaResult.rawResponseBytes <= 512_000);
+        assert.ok(nasaResult.extractedTextBytes !== undefined);
+        assert.ok(nasaResult.extractedTextBytes <= 128_000);
+      }
     } finally {
       await worker.dispose();
     }

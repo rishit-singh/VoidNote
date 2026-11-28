@@ -4,6 +4,8 @@ import { idSchema } from "../contracts/workspace";
 
 const DEFAULT_RESEARCH_SEARCH_RESULTS = 5;
 
+export const DEFAULT_RESEARCH_MAX_RESPONSE_BYTES = 512_000;
+
 export const researchPolicySchema = z
   .object({
     version: z.literal("research-v1"),
@@ -20,7 +22,14 @@ export const researchPolicySchema = z
     budgetId: z.uuid(),
     rateVersionId: z.uuid(),
     reasoningEffort: z.enum(["none", "low", "high"]).default("none"),
+    // Retained/extracted source text; raw page responses have a separate bound.
     maxSourceBytes: z.number().int().min(1000).max(128_000).default(128_000),
+    maxResponseBytes: z
+      .number()
+      .int()
+      .min(1000)
+      .max(DEFAULT_RESEARCH_MAX_RESPONSE_BYTES)
+      .default(DEFAULT_RESEARCH_MAX_RESPONSE_BYTES),
     sourceTimeoutMs: z.number().int().min(1000).max(30_000).default(10_000),
     maxRedirects: z.number().int().min(0).max(5).default(3),
     maxOutputTokens: z.number().int().min(256).max(8192).default(2048),

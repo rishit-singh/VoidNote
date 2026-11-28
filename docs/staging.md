@@ -83,8 +83,24 @@ environment `staging`.
 Real browser authentication and note creation passed. The first paid assistant
 research request failed acceptance: turn `04176cba-c7c9-4929-a149-23bb101dae43`
 completed, but research dispatch returned uncertain and no research run was
-persisted. The browser timed out awaiting a research task. Root-cause diagnosis
-is in progress; report quality/reuse/recovery acceptance remains outstanding.
+persisted. The browser timed out awaiting a research task. A dispatch blocker was
+identified after the `c1f4227` deployment: the tool allowed more subquestions
+than the pinned four-question total. The corrected error classification let the
+assistant amend its request; run `2b2b676f-a930-5672-9413-dc473781a3a4` was
+accepted and completed. Its report is **insufficient-evidence**: both supplied
+NASA page retrievals failed, with no citations or research inference. Source
+transport diagnosis and report quality/reuse/recovery acceptance remain
+outstanding. Settled assistant usage after these three attempts was $0.058406,
+with no reserved inference balance.
+
+The subsequent local Workerd transport reproduction identified an overly broad
+`192.0.*` address exclusion and a raw HTML size limit below the NASA responses.
+Pending deployment fixes retain precise special-purpose exclusions, add a
+512,000-byte raw response bound, and preserve the 128,000-byte extracted-source
+bound. Live local Workerd retrieval then succeeded: Curiosity 367,675 raw /
+13,295 extracted bytes; Perseverance 383,981 raw / 16,727 extracted bytes.
+TLS hostname-mismatch rejection still passed. This source-only evidence does
+not establish hosted retrieval or report synthesis acceptance.
 Deployment and health telemetry do not establish full research acceptance.
 
 ## Acceptance

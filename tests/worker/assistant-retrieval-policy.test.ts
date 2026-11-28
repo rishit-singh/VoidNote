@@ -61,6 +61,37 @@ void test("historical tool schemas stay byte-contract compatible; v3 owns the se
   );
 });
 
+void test("v6 research dispatch advertises the default pinned total-question limit", () => {
+  const schema = assistantToolSchemaForVersion("assistant-skills-v6", "research_dispatch");
+  const base = {
+    question: "What changed in the project?",
+    noteId: null,
+    personId: null,
+    sourceUrls: ["https://example.com/research"],
+    discoverSources: false,
+  };
+
+  assert.equal(
+    schema.safeParse({
+      ...base,
+      subquestions: ["What is the current state?", "What is planned?", "What are the risks?"],
+    }).success,
+    true,
+  );
+  assert.equal(
+    schema.safeParse({
+      ...base,
+      subquestions: [
+        "What is the current state?",
+        "What is planned?",
+        "What are the risks?",
+        "What is the timeline?",
+      ],
+    }).success,
+    false,
+  );
+});
+
 void test("profile mutation tools are exposed only to v3 and require sourced revision fences", () => {
   assert.ok(!assistantToolNamesForVersion("assistant-skills-v1").includes("contacts_create"));
   assert.ok(!assistantToolNamesForVersion("assistant-skills-v2").includes("contacts_update"));

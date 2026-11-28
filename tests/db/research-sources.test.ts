@@ -18,6 +18,7 @@ const policy = researchPolicySchema.parse({
   budgetId: randomUUID(),
   rateVersionId: randomUUID(),
   maxSourceBytes: 1000,
+  maxResponseBytes: 1000,
 });
 
 void describe("public research source boundary", () => {
@@ -44,6 +45,7 @@ void describe("public research source boundary", () => {
       "100.64.0.1",
       "198.18.0.1",
       "192.0.2.1",
+      "192.0.0.1",
       "203.0.113.1",
       "224.0.0.1",
       "::1",
@@ -51,6 +53,7 @@ void describe("public research source boundary", () => {
     ])
       assert.equal(isPublicResearchAddress(address), false, address);
     assert.equal(isPublicResearchAddress("8.8.8.8"), true);
+    assert.equal(isPublicResearchAddress("192.0.66.161"), true);
   });
 
   void it("validates DNS on every redirect and never connects to a private destination", async () => {
@@ -129,6 +132,75 @@ void describe("public research source boundary", () => {
       /byte limit/,
     );
     assert.equal(cancelled, true);
+  });
+
+  void it("bounds raw response bytes separately from retained extracted text", async () => {
+    let requestLimit = 0;
+    const transport: PublicSourceTransport = {
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+      request: (_url, _addresses, maxResponseBytes) => {
+        requestLimit = maxResponseBytes;
+        return Promise.resolve(
+          new Response(`<p>${"x".repeat(1001)}</p>`, {
+            headers: { "content-type": "text/html" },
+          }),
+        );
+      },
+    };
+    const largerRawPolicy = researchPolicySchema.parse({
+      ...policy,
+      maxSourceBytes: 1000,
+      maxResponseBytes: 2000,
+    });
+
+    await assert.rejects(
+      createPublicUrlResearchProvider(transport).retrieve(
+        "https://public.org/ada",
+        largerRawPolicy,
+        AbortSignal.timeout(1000),
+      ),
+      /Extracted source exceeds the byte limit/,
+    );
+    assert.equal(requestLimit, 2000);
+  });
+
+  void it("accepts raw HTML above the retained-text limit when stripped evidence fits", async () => {
+    const rawHtml = `<style>${"x".repeat(130_000)}</style><p>Evidence.</p>`;
+    const largerRawPolicy = researchPolicySchema.parse({
+      ...policy,
+      maxResponseBytes: 200_000,
+    });
+    let requestLimit = 0;
+    const transport: PublicSourceTransport = {
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+      request: (_url, _addresses, maxResponseBytes) => {
+        requestLimit = maxResponseBytes;
+        return Promise.resolve(new Response(rawHtml, { headers: { "content-type": "text/html" } }));
+      },
+    };
+    const result = await createPublicUrlResearchProvider(transport).retrieve(
+      "https://public.org/ada",
+      largerRawPolicy,
+      AbortSignal.timeout(1000),
+    );
+
+    assert.ok(new TextEncoder().encode(rawHtml).byteLength > policy.maxSourceBytes);
+    assert.equal(result.text, "Evidence.");
+    assert.equal(requestLimit, largerRawPolicy.maxResponseBytes);
+  });
+
+  void it("defaults the new response bound for previously pinned policies", () => {
+    const legacyPolicy = researchPolicySchema.parse({
+      version: "research-v1",
+      promptVersion: "research-extract-v1",
+      provider: "workers-ai",
+      model: "test",
+      budgetId: randomUUID(),
+      rateVersionId: randomUUID(),
+      maxSourceBytes: 128_000,
+    });
+
+    assert.equal(legacyPolicy.maxResponseBytes, 512_000);
   });
 
   void it("caps redirects and rejects a mixed public/private DNS result", async () => {

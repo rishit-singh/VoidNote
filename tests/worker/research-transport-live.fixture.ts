@@ -1,7 +1,12 @@
 import { connect } from "cloudflare:sockets";
 
-import { isPublicResearchAddress } from "../../src/ai/research/sources";
+import {
+  createPublicUrlResearchProvider,
+  isPublicResearchAddress,
+  type PublicSourceTransport,
+} from "../../src/ai/research/sources";
 import { createWorkerPublicSourceTransport } from "../../src/ai/research/worker-transport";
+import { researchPolicySchema } from "../../src/config/research";
 
 async function handshakeOnly(ip: string, hostname: string, signal: AbortSignal) {
   if (!isPublicResearchAddress(ip)) throw new Error("Invalid diagnostic destination.");
@@ -36,6 +41,68 @@ async function handshakeOnly(ip: string, hostname: string, signal: AbortSignal) 
 const fixture = {
   async fetch(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname;
+    if (path === "/nasa-curiosity" || path === "/nasa-perseverance") {
+      const sourceUrl =
+        path === "/nasa-curiosity"
+          ? "https://science.nasa.gov/mission/msl-curiosity/"
+          : "https://science.nasa.gov/mission/mars-2020-perseverance/";
+      const baseTransport = createWorkerPublicSourceTransport();
+      let rawResponseBytes = 0;
+      const measuredTransport: PublicSourceTransport = {
+        resolve: (hostname, signal) => baseTransport.resolve(hostname, signal),
+        async request(url, addresses, maxResponseBytes, signal) {
+          const response = await baseTransport.request(url, addresses, maxResponseBytes, signal);
+          const body = await response.clone().arrayBuffer();
+          rawResponseBytes = body.byteLength;
+          return response;
+        },
+      };
+      try {
+        const result = await createPublicUrlResearchProvider(measuredTransport).retrieve(
+          sourceUrl,
+          researchPolicySchema.parse({
+            version: "research-v1",
+            promptVersion: "research-extract-v1",
+            provider: "workers-ai",
+            model: "diagnostic",
+            budgetId: crypto.randomUUID(),
+            rateVersionId: crypto.randomUUID(),
+            maxSourceBytes: 128_000,
+            maxResponseBytes: 512_000,
+            maxRedirects: 3,
+          }),
+          AbortSignal.timeout(30_000),
+        );
+        return Response.json({
+          status: 200,
+          tlsAndHttpSucceeded: true,
+          rawResponseBytes,
+          extractedTextBytes: new TextEncoder().encode(result.text).byteLength,
+        });
+      } catch (error) {
+        const knownErrors = new Set([
+          "Public source resolves to a prohibited address.",
+          "Public source exceeds the byte limit.",
+          "Source body exceeds the byte limit.",
+          "Extracted source exceeds the byte limit.",
+          "Public source is not supported text.",
+          "Public source has no extractable text.",
+          "Public source redirect limit.",
+          "Public source DNS lookup failed.",
+          "Unvalidated source address.",
+          "Source wire response exceeds the bound.",
+        ]);
+        return Response.json({
+          status: 502,
+          tlsAndHttpSucceeded: false,
+          rawResponseBytes,
+          error:
+            error instanceof Error && knownErrors.has(error.message)
+              ? error.message
+              : "Source transport failed.",
+        });
+      }
+    }
     const source = new URL(
       path === "/cloudflare"
         ? "https://simonwillison.net/about/"

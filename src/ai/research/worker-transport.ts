@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { DEFAULT_RESEARCH_MAX_RESPONSE_BYTES } from "../../config/research";
 import {
   isPublicResearchAddress,
   type PublicSourceTransport,
@@ -18,7 +19,7 @@ const dnsResponseSchema = z.object({
 
 /** Minimal bounded HTTP/1.1 reader. Request uses Connection: close and identity
  * encoding; unsupported framing fails closed rather than guessing body boundaries. */
-export function parseResearchHttpResponse(bytes: Uint8Array, maxBytes: number): Response {
+export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: number): Response {
   const wire = new TextDecoder("latin1").decode(bytes);
 
   const separator = wire.indexOf("\r\n\r\n");
@@ -114,7 +115,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxBytes: number): 
       size += chunkSize;
 
       if (
-        size > maxBytes ||
+        size > maxResponseBytes ||
         offset + chunkSize + 2 > body.length ||
         body[offset + chunkSize] !== 13 ||
         body[offset + chunkSize + 1] !== 10
@@ -143,7 +144,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxBytes: number): 
     throw new Error("Source body was interrupted.");
   }
 
-  if (body.length > maxBytes) {
+  if (body.length > maxResponseBytes) {
     throw new Error("Source body exceeds the byte limit.");
   }
 
@@ -193,7 +194,15 @@ export function createWorkerPublicSourceTransport(): PublicSourceTransport {
         .filter((answer) => answer.type === 1)
         .map((answer) => answer.data);
     },
-    async request(url, addresses, maxBytes, signal) {
+    async request(url, addresses, maxResponseBytes, signal) {
+      if (
+        !Number.isSafeInteger(maxResponseBytes) ||
+        maxResponseBytes < 1 ||
+        maxResponseBytes > DEFAULT_RESEARCH_MAX_RESPONSE_BYTES
+      ) {
+        throw new Error("Source response byte limit is invalid.");
+      }
+
       const address = addresses[0];
 
       if (!address || !addresses.every(isPublicResearchAddress)) {
@@ -258,7 +267,7 @@ export function createWorkerPublicSourceTransport(): PublicSourceTransport {
             size += next.value.byteLength;
 
             // Bound framing overhead as well as the decoded HTTP entity.
-            if (size > HEADER_BYTES + maxBytes * 2) {
+            if (size > HEADER_BYTES + maxResponseBytes * 2) {
               throw new Error("Source wire response exceeds the bound.");
             }
 
@@ -278,7 +287,7 @@ export function createWorkerPublicSourceTransport(): PublicSourceTransport {
           offset += part.byteLength;
         }
 
-        return parseResearchHttpResponse(bytes, maxBytes);
+        return parseResearchHttpResponse(bytes, maxResponseBytes);
       } finally {
         signal.removeEventListener("abort", abort);
         await socket.close().catch(() => {});

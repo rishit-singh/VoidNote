@@ -7,7 +7,12 @@ import type { ResearchSource, SourceResearchProvider } from "./ports";
  * the URL hostname for TLS verification. Ordinary fetch(url) is NOT an adapter. */
 export interface PublicSourceTransport {
   resolve(hostname: string, signal: AbortSignal): Promise<string[]>;
-  request(url: URL, addresses: string[], maxBytes: number, signal: AbortSignal): Promise<Response>;
+  request(
+    url: URL,
+    addresses: string[],
+    maxResponseBytes: number,
+    signal: AbortSignal,
+  ): Promise<Response>;
 }
 
 export function isPublicResearchAddress(address: string): boolean {
@@ -27,7 +32,8 @@ export function isPublicResearchAddress(address: string): boolean {
     (a === 100 && b >= 64 && b <= 127) ||
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && (b === 0 || b === 168 || (b === 88 && c === 99))) ||
+    (a === 192 &&
+      ((b === 0 && c === 0) || (b === 0 && c === 2) || (b === 88 && c === 99) || b === 168)) ||
     (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
     (a === 203 && b === 0 && c === 113)
   );
@@ -177,7 +183,7 @@ export function createPublicUrlResearchProvider(
           throw new Error("Public source resolves to a prohibited address.");
         }
 
-        const response = await transport.request(url, addresses, policy.maxSourceBytes, signal);
+        const response = await transport.request(url, addresses, policy.maxResponseBytes, signal);
 
         if ([301, 302, 303, 307, 308].includes(response.status)) {
           const location = response.headers.get("location");
@@ -199,12 +205,16 @@ export function createPublicUrlResearchProvider(
           throw new Error("Public source is not supported text.");
         }
 
-        const body = await readBoundedResearchBody(response, policy.maxSourceBytes, signal);
+        const body = await readBoundedResearchBody(response, policy.maxResponseBytes, signal);
 
         const text = sourceText(body, type === "text/html");
 
         if (!text) {
           throw new Error("Public source has no extractable text.");
+        }
+
+        if (new TextEncoder().encode(text).byteLength > policy.maxSourceBytes) {
+          throw new Error("Extracted source exceeds the byte limit.");
         }
 
         const digestBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));

@@ -36,7 +36,9 @@ export const researchRunsRouter = router({
         .strict(),
     )
     .output(z.array(researchRunDetailSchema))
-    .query(({ ctx, input }) => listResearchRuns(ctx.principal, input.workspaceId, input)),
+    .query(({ ctx, input: { workspaceId, ...filters } }) =>
+      listResearchRuns(ctx.principal, workspaceId, filters),
+    ),
   cancel: procedure
     .input(scope)
     .output(researchRunDetailSchema)

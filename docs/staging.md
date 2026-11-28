@@ -47,9 +47,24 @@ Created during setup:
   with query caching disabled.
 - GitHub staging database secret and Worker auth/recording capability secrets.
 
-Application migrations, application deployment and hosted acceptance are still
-pending. Secret provisioning created a placeholder Worker; the target URL is not
-yet evidence of a deployed application.
+Application migrations through `0020` and deployment succeeded in
+[CI run 46115866017](https://github.com/rishit-singh/VoidNote/actions/runs/46115866017).
+
+- Deployed commit: `5d270b0`.
+- Cloudflare version: `6a9942dc-4475-4111-beb0-dd4f4b215a62`.
+- Hosted homepage and health endpoint return HTTP 200.
+- Unauthenticated session requests return HTTP 401.
+- Chromium renders the landing page and sign-in dialog.
+
+Authenticated HTTP checks passed Supabase login, SSR session bootstrap, workspace
+overview, note create/read/list/delete, legacy research listing and disabled
+research admission. General research listing returned HTTP 500 because its route
+forwarded workspace scope inside a strict filter DTO; its fix is pending
+redeployment and hosted verification.
+
+Google OAuth is not
+configured for this separate Supabase project. Inference and discovery remain
+disabled; deployment does not establish real-provider research acceptance.
 
 ## Acceptance
 

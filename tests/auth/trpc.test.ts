@@ -4,6 +4,7 @@ import { before, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { compileFunction } from "node:vm";
 import { build } from "esbuild";
+import { researchRunListInputSchema } from "../../src/contracts/research/runs.ts";
 import type { CorrectionResult } from "../../src/contracts/transcript-corrections.ts";
 import type { Principal } from "../../src/contracts/workspace.ts";
 import type { AnalysisJob } from "../../src/contracts/analysis/index.ts";
@@ -70,6 +71,7 @@ let closed = 0;
 let calls: { method: string; args: unknown[] }[] = [];
 let authenticate: () => Promise<Principal>;
 let repositoryResult: (method: string, args: unknown[]) => unknown;
+let listResearchRuns: typeof import("../../src/server/research-runs.ts").listResearchRuns;
 let summaryEnabled = true;
 let summaryNotifications: { workspaceId: string; jobId: string; cancel: boolean }[] = [];
 let evidenceReads = 0;
@@ -338,7 +340,8 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
         return {
           requestResearchRun: unexpectedRuntimeService,
           readResearchRun: unexpectedRuntimeService,
-          listResearchRuns: unexpectedRuntimeService,
+          listResearchRuns: (...args: Parameters<typeof listResearchRuns>) =>
+            listResearchRuns(...args),
           cancelResearchRun: unexpectedRuntimeService,
         };
       }
@@ -428,6 +431,7 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
     summaryNotifications = [];
     evidenceReads = 0;
     assistantLeaseCalls = [];
+    listResearchRuns = unexpectedRuntimeService;
     mintAssistantOutputLease = () => Promise.resolve(assistantOutputLease);
     authenticate = () => Promise.resolve(user);
     repositoryResult = (method) =>
@@ -508,6 +512,32 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
     assert.ok(body.every((entry) => entry.error.data.domainCode === "unauthorized"));
     assert.equal(authentications, 1);
     assert.equal(opened, 0);
+  });
+
+  void it("passes verified identity and workspace separately from strict research run list filters", async () => {
+    const verified = { ...user, id: noteId };
+    authenticate = () => Promise.resolve(verified);
+    const filters = {
+      noteId,
+      threadId: assistantOutputScope.threadId,
+      status: "finished",
+      limit: 12,
+    };
+    let serviceCalls = 0;
+    listResearchRuns = (principal, scope, input) => {
+      serviceCalls++;
+      const parsed = researchRunListInputSchema.parse(input);
+      assert.deepEqual(principal, verified);
+      assert.equal(scope, workspaceId);
+      assert.deepEqual(input, filters);
+      assert.deepEqual(parsed, filters);
+      return Promise.resolve([]);
+    };
+    const response = await handle(request("researchRuns.list", { workspaceId, ...filters }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { result: { data: [] } });
+    assert.equal(serviceCalls, 1);
+    assert.equal(authentications, 1);
   });
 
   void it("rejects unauthenticated research run requests and reads before runtime services", async () => {

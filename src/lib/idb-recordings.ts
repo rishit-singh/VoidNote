@@ -48,6 +48,46 @@ export async function getRecordingSessions() {
 export async function getRecordingSession(id: string) {
   return recordingSessionSchema.parse(await (await openDatabase()).get("sessions", id));
 }
+
+/** Serialize acknowledgement with discard and manifest edits; never recreate missing audio. */
+export async function acknowledgeRecordingProcessing(
+  owner: Pick<LocalRecordingSession, "id" | "userId" | "workspaceId" | "noteId">,
+) {
+  const db = await openDatabase();
+  const tx = db.transaction("sessions", "readwrite");
+  const done = tx.done;
+  try {
+    const raw = await tx.store.get(owner.id);
+    if (!raw) {
+      await done;
+      return null;
+    }
+    const current = recordingSessionSchema.parse(raw);
+    if (
+      current.id !== owner.id ||
+      current.userId !== owner.userId ||
+      current.workspaceId !== owner.workspaceId ||
+      current.noteId !== owner.noteId ||
+      current.status !== "finalized"
+    ) {
+      await done;
+      return null;
+    }
+    const acknowledged = { ...raw, processing: "submitted" as const };
+    if (current.processing !== "submitted") await tx.store.put(acknowledged);
+    await done;
+    return acknowledged;
+  } catch (error) {
+    try {
+      tx.abort();
+    } catch {
+      /* Already completed or aborted. */
+    }
+    await done.catch(() => {});
+    throw error;
+  }
+}
+
 // Chunk + manifest + transaction completion form a single commit boundary.
 export async function appendRecordingChunk(sessionId: string, blob: Blob) {
   const db = await openDatabase();

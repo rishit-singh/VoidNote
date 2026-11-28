@@ -13,7 +13,15 @@ import { useNoteStore } from "@/stores/use-note-store";
 type Entity = "note" | "person";
 type HistoryPage = Awaited<ReturnType<typeof workspaceApi.history>>;
 
-export function SaveControls({ entityType, entityId }: { entityType: Entity; entityId: string }) {
+export function SaveControls({
+  entityType,
+  entityId,
+  allowDelete = true,
+}: {
+  entityType: Entity;
+  entityId: string;
+  allowDelete?: boolean;
+}) {
   const edit = useNoteStore((state) => state.edits[`${entityType}:${entityId}`]);
   const saveNote = useNoteStore((state) => state.saveNote);
   const savePerson = useNoteStore((state) => state.savePerson);
@@ -36,19 +44,21 @@ export function SaveControls({ entityType, entityId }: { entityType: Entity; ent
         >
           <Save />
         </Button>
-        <Button
-          type="button"
-          variant="destructive"
-          size="icon"
-          aria-label={`Delete ${entityType === "person" ? "profile" : "note"}`}
-          title="Delete"
-          disabled={edit.saving || !!edit.pending || edit.conflict !== null}
-          onClick={() =>
-            void (entityType === "note" ? deleteNote(entityId) : deletePerson(entityId))
-          }
-        >
-          <Trash2 />
-        </Button>
+        {allowDelete && (
+          <Button
+            type="button"
+            variant="destructive"
+            size="icon"
+            aria-label={`Delete ${entityType === "person" ? "profile" : "note"}`}
+            title="Delete"
+            disabled={edit.saving || !!edit.pending || edit.conflict !== null}
+            onClick={() =>
+              void (entityType === "note" ? deleteNote(entityId) : deletePerson(entityId))
+            }
+          >
+            <Trash2 />
+          </Button>
+        )}
         <span role="status" className="text-sm text-muted-foreground">
           {edit.saving
             ? "Request in progress"

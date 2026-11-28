@@ -1,9 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { expect, test as base, type Route } from "@playwright/test";
 import { z } from "zod";
+import {
+  activityPageInputSchema,
+  activityChangesInputSchema,
+  activityScopeSchema,
+} from "../../src/contracts/activity";
+import { connectorStatusSchema } from "../../src/contracts/connectors";
+import { assistantOutputScopeSchema, assistantScopeSchema } from "../../src/contracts/assistant";
+import { contactDetailsSchema } from "../../src/contracts/contacts";
+import { conversationSummaryScopeSchema } from "../../src/contracts/conversation-summaries";
 import { recordingOverviewSchema } from "../../src/contracts/recording-processing";
 import { personAppearancesSchema } from "../../src/contracts/transcript-corrections";
 import { toPersonListItem } from "../../src/contracts/people";
+import { selfProfileGetSchema } from "../../src/contracts/self-profile";
 import {
   workspaceOverviewSchema,
   type WorkspaceOverview,
@@ -246,6 +256,7 @@ export class WorkspaceFixture {
   };
   notes = new Map<string, NoteRecord>();
   people = new Map<string, PersonRecord>();
+  selfPersonId: string | null = null;
   overviewRecordings: WorkspaceOverview["recentRecordings"] = [];
   mutations: Mutation[] = [];
   requests: string[] = [];
@@ -306,6 +317,143 @@ export class WorkspaceFixture {
       return;
     }
     this.requests.push(`${method} ${path}${url.search}`);
+    if (method === "GET" && path === "/api/selfProfile.get") {
+      const input = selfProfileGetSchema.parse(JSON.parse(url.searchParams.get("input") ?? "null"));
+      if (input.workspaceId !== this.session?.workspace.id) return block();
+      const person = this.selfPersonId ? this.people.get(this.selfPersonId) : null;
+      await route.fulfill({
+        json: { result: { data: person && !person.deletedAt ? person : null } },
+      });
+      return;
+    }
+    if (method === "GET" && path === "/api/activity.list") {
+      const input = activityPageInputSchema.parse(
+        JSON.parse(url.searchParams.get("input") ?? "null"),
+      );
+      if (input.workspaceId !== this.session?.workspace.id) return block();
+      await route.fulfill({
+        json: { result: { data: { items: [], nextCursor: null, unreadCount: 0 } } },
+      });
+      return;
+    }
+    if (method === "GET" && path === "/api/activity.changes") {
+      const input = activityChangesInputSchema.parse(
+        JSON.parse(url.searchParams.get("input") ?? "null"),
+      );
+      if (input.workspaceId !== this.session?.workspace.id) return block();
+      await route.fulfill({
+        json: { result: { data: { items: [], cursor: input.after, hasMore: false } } },
+      });
+      return;
+    }
+    if (method === "POST" && path === "/api/activity.subscribe") {
+      const input = activityScopeSchema.parse(request.postDataJSON());
+      if (input.workspaceId !== this.session?.workspace.id) return block();
+      await route.fulfill({
+        status: 503,
+        json: {
+          error: {
+            message: "Live activity is disabled in this fixture.",
+            code: -32603,
+            data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503, path: "activity.subscribe" },
+          },
+        },
+      });
+      return;
+    }
+    if (method === "GET" && path === "/api/connectors.slackStatus") {
+      const input = z
+        .object({ workspaceId: z.uuid() })
+        .strict()
+        .parse(JSON.parse(url.searchParams.get("input") ?? "null"));
+      if (input.workspaceId !== this.session?.workspace.id) return block();
+      await route.fulfill({
+        json: {
+          result: {
+            data: connectorStatusSchema.parse({
+              enabled: false,
+              configured: false,
+              provider: "slack",
+              connection: "unavailable",
+              budgetConfigured: false,
+              receipts: [],
+              linkReceipts: [],
+            }),
+          },
+        },
+      });
+      return;
+    }
+    if (method === "GET" && path === "/api/assistant.conversationSummary") {
+      const input = conversationSummaryScopeSchema.parse(
+        JSON.parse(url.searchParams.get("input") ?? "null"),
+      );
+      if (input.workspaceId !== this.session?.workspace.id) return block();
+      await route.fulfill({ json: { result: { data: null } } });
+      return;
+    }
+    if (method === "POST" && path === "/api/assistant.outputLease") {
+      const input = assistantOutputScopeSchema.parse(request.postDataJSON());
+      if (input.workspaceId !== this.session?.workspace.id) return block();
+      await route.fulfill({
+        status: 503,
+        json: {
+          error: {
+            message: "Live output is disabled in this fixture.",
+            code: -32603,
+            data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503, path: "assistant.outputLease" },
+          },
+        },
+      });
+      return;
+    }
+    if (method === "GET" && path === "/api/assistant.artifacts") {
+      const input = assistantScopeSchema
+        .extend({
+          noteId: z.uuid().optional(),
+          threadId: z.uuid().optional(),
+        })
+        .strict()
+        .parse(JSON.parse(url.searchParams.get("input") ?? "null"));
+      if (input.workspaceId !== this.session?.workspace.id) return block();
+      await route.fulfill({ json: { result: { data: [] } } });
+      return;
+    }
+    if (method === "GET" && path === "/api/contacts.get") {
+      const input = z
+        .object({ workspaceId: z.uuid(), personId: z.uuid() })
+        .strict()
+        .parse(JSON.parse(url.searchParams.get("input") ?? "null"));
+      if (input.workspaceId !== this.session?.workspace.id || !this.people.has(input.personId))
+        return block();
+      await route.fulfill({
+        json: {
+          result: {
+            data: contactDetailsSchema.parse({
+              personId: input.personId,
+              organization: "",
+              role: "",
+              links: [],
+              revision: 0,
+              updatedAt: null,
+            }),
+          },
+        },
+      });
+      return;
+    }
+    if (method === "GET" && ["/api/research.availability", "/api/research.list"].includes(path)) {
+      const input = z
+        .object({ workspaceId: z.uuid(), personId: z.uuid().optional() })
+        .strict()
+        .parse(JSON.parse(url.searchParams.get("input") ?? "null"));
+      if (input.workspaceId !== this.session?.workspace.id) return block();
+      const data = path.endsWith(".list")
+        ? []
+        : { enabled: false, reason: "Research is disabled in this fixture." };
+      await route.fulfill({ json: { result: { data } } });
+      return;
+    }
     if (path === "/api/session" && method === "GET") {
       await route.fulfill(
         this.session

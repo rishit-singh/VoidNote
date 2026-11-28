@@ -139,6 +139,29 @@ async function fixture(page: Page, workspace: WorkspaceFixture) {
       });
     }
     if (path.endsWith("/history")) return route.fulfill({ json: { items: [], nextCursor: null } });
+    if (path.endsWith("/corrections/targets") && route.request().method() === "GET") {
+      const includeManual =
+        new URL(route.request().url()).searchParams.get("includeManual") === "true";
+      const matches = state.items.filter(
+        (turn) =>
+          turn.speakerLabel === new URL(route.request().url()).searchParams.get("speakerLabel") &&
+          (includeManual || turn.assignmentSource === "unassigned"),
+      );
+      const excludedManualCount = state.items.filter(
+        (turn) =>
+          turn.speakerLabel === new URL(route.request().url()).searchParams.get("speakerLabel") &&
+          turn.assignmentSource === "manual",
+      ).length;
+      return route.fulfill({
+        json: {
+          targets: matches.map(({ id, attributionRevision }) => ({
+            id,
+            expectedAttributionRevision: attributionRevision,
+          })),
+          excludedManualCount: includeManual ? 0 : excludedManualCount,
+        },
+      });
+    }
     if (!path.endsWith("/corrections")) return route.fallback();
     if (route.request().method() === "GET") {
       const items = structuredClone(state.items);
@@ -260,8 +283,14 @@ async function fixture(page: Page, workspace: WorkspaceFixture) {
   return { note, person, state };
 }
 
+async function confirmOnlyThis(page: Page) {
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("group", { name: "Confirm speaker assignment" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Only this passage" }).click();
+}
+
 for (const mobile of [false, true]) {
-  test(`${mobile ? "mobile" : "desktop"}: immediate speaker assignment, inline creation and undo`, async ({
+  test(`${mobile ? "mobile" : "desktop"}: confirmed speaker assignment, inline creation and undo`, async ({
     page,
     workspace,
   }) => {
@@ -272,6 +301,7 @@ for (const mobile of [false, true]) {
     const dialog = page.getByRole("dialog", { name: "Choose speaker" });
     await expect(dialog.getByRole("textbox")).toBeFocused();
     await dialog.getByRole("button", { name: "Select Alex Rivera" }).click();
+    await confirmOnlyThis(page);
     await expect(dialog).toHaveCount(0);
     await page.getByRole("button", { name: "Assign speaker at 0:00: Alex Rivera" }).click();
     await dialog.getByRole("textbox").fill("Sam Lee");
@@ -280,6 +310,7 @@ for (const mobile of [false, true]) {
       animations: "disabled",
     });
     await dialog.getByRole("button", { name: "Create “Sam Lee”" }).click();
+    await confirmOnlyThis(page);
     await expect(
       page.getByRole("button", { name: "Assign speaker at 0:00: Sam Lee" }),
     ).toBeVisible();
@@ -315,6 +346,7 @@ for (const mobile of [false, true]) {
       animations: "disabled",
     });
     await dialog.getByRole("button", { name: "Select Alex Rivera" }).click();
+    await confirmOnlyThis(page);
     await expect(dialog).toHaveCount(0);
     await expect.poll(() => f.state.commands.length).toBe(1);
     expect(f.state.commands[0]?.kind).toBe("split");
@@ -337,6 +369,10 @@ test("uncertain assignment replays its exact command after reload; stale assignm
     .getByRole("dialog")
     .getByRole("button", { name: "Unknown speaker", exact: true })
     .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /All matching segments/ })
+    .click();
   await expect(
     page
       .getByRole("region", { name: "Corrected transcript" })
@@ -351,6 +387,7 @@ test("uncertain assignment replays its exact command after reload; stale assignm
   await page.getByRole("button", { name: "Assign speaker at 0:00: Unknown speaker" }).click();
   f.state.failure = "conflict";
   await page.getByRole("button", { name: "Select Alex Rivera" }).click();
+  await confirmOnlyThis(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Review speech", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -374,6 +411,7 @@ test("assignment and Undo preview before acknowledgement and finish while refres
   const transcript = page.getByRole("region", { name: "Corrected transcript" });
   try {
     await page.getByRole("button", { name: "Select Alex Rivera" }).click();
+    await confirmOnlyThis(page);
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Assign speaker at 0:00: Alex Rivera" }),
@@ -425,6 +463,7 @@ test("selected speech previews stable children and a rejection removes only the 
   f.state.failure = "conflict";
   try {
     await page.getByRole("button", { name: "Select Alex Rivera" }).click();
+    await confirmOnlyThis(page);
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(
       page.getByRole("list", { name: "Timestamped transcript" }).getByRole("listitem"),
@@ -470,6 +509,7 @@ test("conflict recovery persistence failures remain visible instead of the gener
   });
   f.state.failure = "conflict";
   await page.getByRole("button", { name: "Select Alex Rivera" }).click();
+  await confirmOnlyThis(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     page.getByText(
@@ -497,6 +537,7 @@ test("correction intent survives navigation while a delayed acknowledgement cann
   });
   try {
     await page.getByRole("button", { name: "Select Alex Rivera" }).click();
+    await confirmOnlyThis(page);
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect.poll(() => f.state.commands.length).toBe(1);
     await page.getByRole("link", { name: other.title, exact: true }).click();
@@ -564,6 +605,7 @@ test("inline profile replay verifies deletion before updating cached profiles", 
   await dialog.getByRole("textbox").fill("Historical guest");
   f.state.failure = "lost";
   await dialog.getByRole("button", { name: "Create “Historical guest”" }).click();
+  await confirmOnlyThis(page);
   await expect(
     page
       .getByRole("region", { name: "Corrected transcript" })
@@ -638,6 +680,10 @@ test("demo: grouped passage assigns all segments and downloads Markdown", async 
   ).toHaveCount(1);
   await page.getByRole("button", { name: "Assign speaker at 0:00: Speaker 1" }).click();
   await page.getByRole("button", { name: "Select Alex Rivera" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /All matching segments/ })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect.poll(() => f.state.commands.length).toBe(1);
   const command = f.state.commands[0];

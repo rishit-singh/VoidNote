@@ -32,7 +32,13 @@ before(async () => {
 });
 
 const attributes = z.array(
-  z.object({ key: z.string(), value: z.object({ stringValue: z.string() }) }),
+  z.object({
+    key: z.string(),
+    value: z.object({
+      stringValue: z.string().optional(),
+      intValue: z.union([z.string(), z.number()]).optional(),
+    }),
+  }),
 );
 const spanSchema = z.object({
   name: z.string(),
@@ -214,6 +220,23 @@ void test(
     assertTrace(capture, health.requestId);
   },
 );
+
+void test("application operations export a connected tree without filtered framework parents", async (t) => {
+  const worker = startWorker(t, { token });
+  const call = worker.dispatch("application", "/application");
+  assert.equal((await call.response).status, 200);
+  await call.finished;
+  const payload = payloadSchema.parse(JSON.parse(worker.captures[0]!.body));
+  const spans = payload.resourceSpans.flatMap((r) => r.scopeSpans.flatMap((s) => s.spans));
+  const root = spans.find((span) => span.name === "worker.fetch")!;
+  const child = spans.find((span) => span.name === "trpc.assistant.messages")!;
+  assert.equal(spans.length, 2);
+  assert.ok(root);
+  assert.ok(child);
+  assert.equal(root.parentSpanId, undefined);
+  assert.equal(child.parentSpanId, root.spanId);
+  assert.equal(child.traceId, root.traceId);
+});
 
 void test(
   "overlapping requests retain async context and exclude sensitive span content",

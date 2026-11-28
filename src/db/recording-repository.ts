@@ -9,6 +9,7 @@ import {
 } from "../contracts/recording-processing";
 import { idSchema, WorkspaceError, type Principal } from "../contracts/workspace";
 import type { Database } from "./repository";
+import { appendApplicationEvent } from "./activity";
 import {
   notes,
   recordings,
@@ -458,6 +459,17 @@ export function createRecordingRepository(db: Database) {
         await tx
           .insert(recordingEvents)
           .values({ workspaceId, recordingId: recording.id, runId, kind: "transcript.published" });
+        await appendApplicationEvent(tx, {
+          id: crypto.randomUUID(),
+          workspaceId,
+          type: "transcript.ready",
+          actorId: run.actorId,
+          executor: "workflow",
+          operationId: runId,
+          noteId: run.noteId,
+          runId,
+          generation: run.transcriptGeneration + 1,
+        });
       });
     },
   };

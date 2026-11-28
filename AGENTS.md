@@ -15,6 +15,10 @@
 
 ## Modification and module conventions
 
+- Start with the simplest approach that meets the current requirement. Durability
+  is required, not a justification for speculative machinery, repeated checks or
+  extra persistence. Add complexity only for a demonstrated failure, measured
+  bottleneck or explicit product requirement; state the evidence and tradeoff.
 - Load `change-with-confidence` for substantive fixes, modifications and refactors.
   Load `domain-first-stack` for cross-layer architecture or domain slices. Canonical
   instructions live in `.opencode/skills/`; the plan-directory copies are handoff records.
@@ -30,6 +34,11 @@
   constants for domain/protocol invariants. Preserve settings pinned to durable work.
 - Show optimistic pending feedback separately from acknowledgement. Successful
   mutations must not wait for background refetch; rollback preserves newer edits.
+- Define each command's acknowledgement boundary. Keep accepted work visible
+  across stale/missing query projections; read failures are not command failures.
+  Rehydrate exact intent and durable acknowledgements, not stale in-flight flags.
+  All submission paths share atomic acknowledgement persistence. Follow the
+  transition/recovery checks in `change-with-confidence`.
 - Review verified lessons at the end of a substantive slice and before major
   refactors/runtime upgrades. Update the owning canonical skill only when evidence
   warrants it; record material changes in its changelog. Product decisions and

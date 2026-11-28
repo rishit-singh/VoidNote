@@ -1,0 +1,163 @@
+name: Staging
+
+on:
+  push:
+    branches: ["staging/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: Check, migrate and deploy staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: staging
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: voidnote_test
+          POSTGRES_PASSWORD: voidnote_test
+          POSTGRES_DB: voidnote_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U voidnote_test -d voidnote_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      WRANGLER_SEND_METRICS: "false"
+      TEST_DATABASE_URL: postgresql://voidnote_test:voidnote_test@127.0.0.1:5432/voidnote_test
+      STAGING_APP_URL: ${{ vars.STAGING_APP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Pin checks and delivery to the selected dispatch ref's event SHA.
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Validate staging delivery configuration
+        shell: bash
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          : "${STAGING_DATABASE_URL:?Set the STAGING_DATABASE_URL staging environment secret}"
+          : "${CLOUDFLARE_API_TOKEN:?Set the CLOUDFLARE_API_TOKEN Actions secret}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?Set the CLOUDFLARE_ACCOUNT_ID Actions secret}"
+          : "${STAGING_APP_URL:?Set the STAGING_APP_URL staging environment variable}"
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check formatting
+        run: bun run format:check
+
+      - name: Lint without warnings
+        run: bun run lint --max-warnings=0
+
+      - name: Check runtime and test types
+        run: bun run typecheck
+
+      - name: Test Workers telemetry lifecycle
+        run: bun run test:worker
+
+      - name: Test PostgreSQL transactions and workspace isolation
+        run: bun run test:db
+
+      - name: Test Supabase auth boundary
+        run: bun run test:auth
+
+      - name: Build the staging Worker
+        run: bun run build:worker:staging
+
+      - name: Validate staging Worker packaging without deploying
+        run: bunx --no-install wrangler deploy --config wrangler.jsonc --env staging --dry-run
+
+      # playwright.config.ts starts --env production. Do not use it as staging
+      # acceptance until a staging-specific local preview is supported.
+      - name: Migrate the staging database
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: bun run db:migrate
+
+      - name: Deploy the checked staging Worker
+        id: deploy
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/staging-deploy/wrangler.jsonl
+        run: |
+          mkdir -p "$RUNNER_TEMP/staging-deploy"
+          # Explicit config reuses checked .open-next output without rebuilding.
+          bunx --no-install wrangler deploy --config wrangler.jsonc --env staging \
+            --tag "$GITHUB_SHA" \
+            --message "Staging CI run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
+          version_id="$(jq -er -s '
+            [.[] | select(.type == "deploy" and .wrangler_environment == "staging")]
+            | last | .version_id | select(type == "string" and length > 0)
+          ' "$WRANGLER_OUTPUT_FILE_PATH")"
+          echo "version_id=$version_id" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test staging health
+        id: smoke
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --retry 6 --retry-all-errors \
+            --retry-delay 5 --connect-timeout 10 --max-time 20 \
+            -H 'Cache-Control: no-cache' \
+            "${STAGING_APP_URL%/}/api/health" \
+            -o "$RUNNER_TEMP/staging-deploy/health.json"
+          jq -e '.status == "ok" and (.requestId | type == "string" and length > 0)' \
+            "$RUNNER_TEMP/staging-deploy/health.json"
+
+      - name: Record staging delivery
+        if: ${{ !cancelled() && steps.deploy.outcome != 'skipped' }}
+        shell: bash
+        env:
+          VERSION_ID: ${{ steps.deploy.outputs.version_id }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/staging-deploy"
+          jq -n --arg commit "$GITHUB_SHA" --arg version "$VERSION_ID" \
+            --arg deployment "$DEPLOY_OUTCOME" --arg smoke "$SMOKE_OUTCOME" \
+            --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{commit: $commit, cloudflareVersion: $version, deployment: $deployment, smoke: $smoke, run: $run}' \
+            > "$RUNNER_TEMP/staging-deploy/result.json"
+          {
+            echo '## Staging delivery'
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Cloudflare version: \`${VERSION_ID:-unavailable}\`"
+            echo "- Deployment: $DEPLOY_OUTCOME"
+            echo "- Health smoke test: $SMOKE_OUTCOME"
+            echo "- URL: $STAGING_APP_URL"
+            echo '- Browser suite omitted: its local preview currently targets production.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload staging delivery evidence
+        if: ${{ !cancelled() && steps.deploy.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-deploy-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/staging-deploy/
+          if-no-files-found: error
+          retention-days: 30

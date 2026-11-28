@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   doublePrecision,
@@ -7,6 +8,7 @@ import {
   index,
   integer,
   jsonb,
+  pgSchema,
   pgTable,
   primaryKey,
   text,
@@ -31,10 +33,15 @@ const recordColumns = () => ({
   deletedAt: time("deleted_at"),
 });
 
-// Auth-provider identities enter through the verified Principal boundary. Keeping
-// this table independent of auth.users also supports isolated vanilla Postgres.
+// Reference only: Supabase owns auth.users. Do not export this table into Drizzle's
+// managed schema. drizzle.config.ts also limits introspection to public.
+const authUsers = pgSchema("auth").table("users", { id: uuid("id").primaryKey() });
+
+// A verified Principal is required by services; SQL also enforces identity existence.
 export const userProfiles = pgTable("user_profiles", {
-  id: uuid("id").primaryKey(),
+  id: uuid("id")
+    .primaryKey()
+    .references(() => authUsers.id, { onDelete: "restrict" }),
   email: text("email"),
   createdAt: time("created_at").notNull().defaultNow(),
   updatedAt: time("updated_at").notNull().defaultNow(),
@@ -121,6 +128,9 @@ export const people = pgTable(
     }),
     check("people_revision_check", sql`${t.revision} > 0`),
     check("people_branch_check", sql`${t.branchId} = 'default'`),
+    uniqueIndex("people_active_account_unique")
+      .on(t.workspaceId, t.accountId)
+      .where(sql`${t.deletedAt} is null and ${t.accountId} is not null`),
     index("people_active_id_idx")
       .on(t.workspaceId, t.id)
       .where(sql`${t.deletedAt} is null`),
@@ -370,6 +380,72 @@ export const analysisJobs = pgTable(
       .on(sql`coalesce(${t.dispatchCheckedAt}, ${t.createdAt})`, t.workspaceId, t.id)
       .where(sql`${t.status} in ('queued', 'running')`),
     index("analysis_jobs_note_idx").on(t.workspaceId, t.noteId, t.createdAt.desc()),
+  ],
+).enableRLS();
+
+// Allowances are explicitly provisioned. Unknown usage remains held; validated
+// usage settles the hold while retaining its permanent no-replay receipt.
+export const summaryInferenceBudgets = pgTable(
+  "summary_inference_budgets",
+  {
+    id: uuid("id").primaryKey(),
+    model: text("model").notNull(),
+    limitMicroUsd: integer("limit_micro_usd").notNull(),
+    reservationMicroUsd: integer("reservation_micro_usd").notNull(),
+    reservedMicroUsd: integer("reserved_micro_usd").notNull().default(0),
+    settledMicroUsd: bigint("settled_micro_usd", { mode: "number" }).notNull().default(0),
+    createdAt: time("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("summary_inference_budgets_limit_positive", sql`${t.limitMicroUsd} > 0`),
+    check("summary_inference_budgets_reservation_positive", sql`${t.reservationMicroUsd} > 0`),
+    check("summary_inference_budgets_settled_nonnegative", sql`${t.settledMicroUsd} >= 0`),
+    check(
+      "summary_inference_budgets_reserved_bounds",
+      sql`${t.reservedMicroUsd} >= 0 and ${t.reservedMicroUsd} <= ${t.limitMicroUsd}`,
+    ),
+  ],
+).enableRLS();
+
+export const summaryInferenceReservations = pgTable(
+  "summary_inference_reservations",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    jobId: uuid("job_id").notNull(),
+    budgetId: uuid("budget_id")
+      .notNull()
+      .references(() => summaryInferenceBudgets.id),
+    amountMicroUsd: integer("amount_micro_usd").notNull(),
+    inputTokenBound: integer("input_token_bound"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    actualMicroUsd: bigint("actual_micro_usd", { mode: "number" }),
+    settledAt: time("settled_at"),
+    createdAt: time("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.jobId] }),
+    foreignKey({
+      name: "summary_inference_reservations_job_fk",
+      columns: [t.workspaceId, t.jobId],
+      foreignColumns: [analysisJobs.workspaceId, analysisJobs.id],
+    }),
+    check("summary_inference_reservations_amount_positive", sql`${t.amountMicroUsd} > 0`),
+    check(
+      "summary_inference_reservations_input_bound",
+      sql`${t.inputTokenBound} is null or (${t.inputTokenBound} > 0 and ${t.inputTokenBound} <= 1048576)`,
+    ),
+    check(
+      "summary_inference_reservations_settlement",
+      sql`(
+        ${t.settledAt} is null and ${t.inputTokens} is null
+        and ${t.outputTokens} is null and ${t.actualMicroUsd} is null
+      ) or (
+        ${t.settledAt} is not null and ${t.inputTokens} is not null
+        and ${t.outputTokens} is not null and ${t.actualMicroUsd} is not null
+        and ${t.inputTokens} >= 0 and ${t.outputTokens} >= 0 and ${t.actualMicroUsd} >= 0
+      )`,
+    ),
   ],
 ).enableRLS();
 

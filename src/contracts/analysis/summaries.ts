@@ -1,10 +1,21 @@
 import { z } from "zod";
 
 import { idSchema } from "../workspace";
+import { analysisJobSchema } from "./commands";
 import { citationSchema, transcriptVersionSchema } from "./evidence";
 
 export const SUMMARY_SCHEMA_VERSION = "summary-v1";
-export const SUMMARY_PROMPT_VERSION = "summary-v1";
+export const SUMMARY_PROMPT_VERSIONS = [
+  "summary-v1",
+  "summary-v2",
+  "summary-v3",
+  "summary-v4",
+  "summary-v5",
+  "summary-v6",
+  "summary-v7",
+  "summary-v8",
+] as const;
+export const SUMMARY_PROMPT_VERSION = "summary-v8";
 
 const statementSchema = z
   .object({
@@ -13,8 +24,9 @@ const statementSchema = z
   })
   .strict();
 
-// Keep this model-facing schema representable as JSON Schema for step.prompt().
-export const summaryAnalysisSchema = z
+// Frozen public model contract used by historical v1–v4 prompts and v1–v6
+// evaluation artifacts. Keep its JSON Schema byte-stable.
+export const summaryAnalysisV1Schema = z
   .object({
     quickSummary: z.array(statementSchema).min(1).max(12),
     detailedSummary: z.array(statementSchema).min(1).max(40),
@@ -96,10 +108,16 @@ export const summaryAnalysisSchema = z
   })
   .strict();
 
+// The saved DTO keeps the same array shape. V7 may omit a redundant detail;
+// quick-summary and citation requirements remain unchanged.
+export const summaryAnalysisSchema = summaryAnalysisV1Schema.extend({
+  detailedSummary: z.array(statementSchema).max(40),
+});
+
 export const summaryProvenanceSchema = z
   .object({
     model: z.string().min(1).max(200),
-    promptVersion: z.literal(SUMMARY_PROMPT_VERSION),
+    promptVersion: z.enum(SUMMARY_PROMPT_VERSIONS),
     schemaVersion: z.literal(SUMMARY_SCHEMA_VERSION),
     policyVersion: z.string().min(1).max(100),
   })
@@ -118,6 +136,47 @@ export const savedSummarySchema = z
     createdAt: z.iso.datetime({ offset: true }),
   })
   .strict();
+
+export const summaryOverviewInputSchema = z
+  .object({ workspaceId: idSchema, noteId: idSchema })
+  .strict();
+export const summaryOverviewSchema = z
+  .object({
+    latestJob: analysisJobSchema.nullable(),
+    latestSummaryJobId: idSchema.nullable(),
+    canGenerate: z.boolean(),
+    unavailableReason: z.string().nullable(),
+  })
+  .strict();
+export const summaryHistoryInputSchema = z
+  .object({
+    workspaceId: idSchema,
+    noteId: idSchema,
+    cursor: z.string().max(2000).optional(),
+    // tRPC's infinite-query adapter includes direction even on the first page.
+    direction: z.literal("forward").optional(),
+    limit: z.number().int().min(1).max(50).default(30),
+  })
+  .strict();
+export const summaryHistorySchema = z
+  .object({
+    items: z.array(
+      z
+        .object({
+          jobId: idSchema,
+          version: z.number().int().positive(),
+          createdAt: z.iso.datetime({ offset: true }),
+        })
+        .strict(),
+    ),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+
+export type SummaryOverviewInput = z.infer<typeof summaryOverviewInputSchema>;
+export type SummaryOverview = z.infer<typeof summaryOverviewSchema>;
+export type SummaryHistoryInput = z.infer<typeof summaryHistoryInputSchema>;
+export type SummaryHistory = z.infer<typeof summaryHistorySchema>;
 
 export type SummaryAnalysis = z.infer<typeof summaryAnalysisSchema>;
 export type SummaryProvenance = z.infer<typeof summaryProvenanceSchema>;

@@ -1,4 +1,4 @@
-import type { StepContext, TurnConfig } from "@cloudflare/think";
+import type { StepContext, TurnConfig, TurnContext } from "@cloudflare/think";
 
 import { readSummarySnapshot, validateSummaryAnalysis } from "../../../src/ai/context";
 import { withAnalysisDatabase } from "../../../src/ai/jobs";
@@ -18,8 +18,8 @@ export class SummaryAgent extends ProductionSummaryAgent {
     )`;
   }
 
-  override async beforeTurn(): Promise<TurnConfig> {
-    const config = await super.beforeTurn();
+  override async beforeTurn(context: TurnContext): Promise<TurnConfig> {
+    const config = await super.beforeTurn(context);
     return {
       ...config,
       ...(this.state.scope?.jobId !== proof.jobs[0]

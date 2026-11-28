@@ -11,6 +11,25 @@ export function recordingEnvironment() {
   const env = getCloudflareContext().env;
   return recordingBindingsSchema.parse(env);
 }
+
+export function processingEnvironment() {
+  const env = getCloudflareContext().env;
+  // Check processing credentials before shared binding validation so missing setup
+  // is a service outage, not invalid user input. Upload validation remains strict.
+  if (
+    !env.PYANNOTE_API_KEY?.trim() ||
+    !recordingBindingsSchema.shape.RECORDING_CAPABILITY_SECRET.safeParse(
+      env.RECORDING_CAPABILITY_SECRET?.trim(),
+    ).success
+  ) {
+    throw new WorkspaceError(
+      "service_unavailable",
+      "Transcription is not configured for this environment. Uploaded audio remains available; retry after setup.",
+    );
+  }
+  return recordingBindingsSchema.parse(env);
+}
+
 export function recordingResponse(
   request: Request,
   workspaceId: string,

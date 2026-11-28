@@ -1,5 +1,5 @@
 import { WorkspaceError } from "@/contracts/workspace";
-import { recordingResponse, recordingEnvironment } from "@/server/recording-api";
+import { recordingResponse, processingEnvironment } from "@/server/recording-api";
 type Context = { params: Promise<{ workspaceId: string; noteId: string; runId: string }> };
 export async function POST(request: Request, context: Context) {
   const { workspaceId, noteId, runId } = await context.params;
@@ -7,7 +7,7 @@ export async function POST(request: Request, context: Context) {
     const { runs } = await repo.overview(principal, workspaceId, noteId);
     const run = runs.find((item) => item.id === runId);
     if (!run) throw new WorkspaceError("not_found", "Run not found.");
-    const binding = recordingEnvironment().PROCESS_RECORDING;
+    const binding = processingEnvironment().PROCESS_RECORDING;
     const result = await binding.createBatch({
       instances: [{ id: run.id, params: { workspaceId, runId } }],
     });

@@ -12,11 +12,25 @@ export {
   summaryEvidenceSchema,
   transcriptVersionSchema,
 } from "./evidence";
-export type { SavedSummary, SummaryAnalysis, SummaryProvenance } from "./summaries";
+export type {
+  SavedSummary,
+  SummaryAnalysis,
+  SummaryHistory,
+  SummaryHistoryInput,
+  SummaryOverview,
+  SummaryOverviewInput,
+  SummaryProvenance,
+} from "./summaries";
 export {
   savedSummarySchema,
   SUMMARY_PROMPT_VERSION,
+  SUMMARY_PROMPT_VERSIONS,
   SUMMARY_SCHEMA_VERSION,
   summaryAnalysisSchema,
+  summaryAnalysisV1Schema,
+  summaryHistoryInputSchema,
+  summaryHistorySchema,
+  summaryOverviewInputSchema,
+  summaryOverviewSchema,
   summaryProvenanceSchema,
 } from "./summaries";

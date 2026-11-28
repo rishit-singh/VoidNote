@@ -7,12 +7,14 @@ import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
+import { platformTables } from "./platform-tables";
 
 import type { ContextReference, SummaryContext } from "../../src/ai/context";
 import { summaryPolicy, type SummaryPolicy } from "../../src/ai/runtime";
 import type { SummaryAnalysis } from "../../src/contracts/analysis";
 import { WorkspaceError } from "../../src/contracts/workspace";
 import { createAnalysisRepository } from "../../src/db/analysis";
+import { createAssistantRepository } from "../../src/db/assistant";
 import { createRecordingRepository } from "../../src/db/recording-repository";
 import { createWorkspaceRepository } from "../../src/db/repository";
 import * as schema from "../../src/db/schema";
@@ -35,6 +37,7 @@ const db = drizzle(sql, {
   },
 });
 const repo = createAnalysisRepository(db);
+const assistant = createAssistantRepository(db);
 const workspaceRepo = createWorkspaceRepository(db);
 const corrections = createTranscriptCorrectionRepository(db);
 const policy = summaryPolicy("@cf/test/summary");
@@ -46,6 +49,9 @@ async function teardown() {
   try {
     if (ownsTables) {
       for (const table of [
+        ...platformTables,
+        "summary_inference_reservations",
+        "summary_inference_budgets",
         "note_summaries",
         "analysis_jobs",
         "transcript_correction_outbox",
@@ -69,6 +75,8 @@ async function teardown() {
         await sql`drop table if exists ${sql(`public.${table}`)}`;
       }
       await sql`drop schema if exists ${sql(migrationsSchema)} cascade`;
+      await sql`drop table if exists auth.users`;
+      await sql`drop schema if exists auth`;
     }
   } finally {
     await lock`select pg_advisory_unlock(72002, 1)`;
@@ -85,7 +93,11 @@ try {
     where n.nspname not in ('pg_catalog','information_schema')
       and n.nspname not like 'pg_toast%' and c.relkind in ('r','p','v','m','S')`;
   assert.equal(existing.length, 0, "refusing to migrate a nonempty database");
+  const [authSchema] = await sql`select 1 from pg_namespace where nspname = 'auth'`;
+  assert.equal(authSchema, undefined, "refusing to own an existing auth schema");
   ownsTables = true;
+  await sql`create schema auth`;
+  await sql`create table auth.users (id uuid primary key)`;
   await migrate(db, {
     migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)),
     migrationsSchema,
@@ -101,6 +113,7 @@ const code = (expected: WorkspaceError["code"]) => (error: unknown) =>
 
 async function fixture() {
   const principal = { id: randomUUID(), email: null };
+  await sql`insert into auth.users (id) values (${principal.id})`;
   const workspace = await workspaceRepo.ensureWorkspace(principal);
   const workspaceId = workspace.id;
   const note = await workspaceRepo.saveNote(principal, workspaceId, {
@@ -238,6 +251,60 @@ async function waitForDatabaseBlock(waiterPid: number, blockerPid: number) {
 }
 
 void describe("summary job repository", () => {
+  void it("coalesces duplicate automatic admissions and rejects obsolete source events", async () => {
+    const f = await fixture();
+    const source = { runId: f.runId, generation: 1 };
+    const automatic = () =>
+      repo.request(
+        f.principal,
+        f.workspaceId,
+        { commandId: randomUUID(), noteId: f.noteId },
+        policy,
+        source,
+      );
+    const jobs = await Promise.all([automatic(), automatic(), automatic()]);
+    assert.equal(new Set(jobs.map((job) => job.id)).size, 1);
+    await workspaceRepo.saveNote(f.principal, f.workspaceId, {
+      commandId: randomUUID(),
+      id: f.noteId,
+      expectedRevision: f.note.revision,
+      content: { transcript: f.note.transcript, title: "Renamed without changing recording" },
+    });
+    assert.equal((await automatic()).id, jobs[0].id);
+    await db
+      .update(schema.processingRuns)
+      .set({ transcriptGeneration: 2 })
+      .where(
+        and(
+          eq(schema.processingRuns.workspaceId, f.workspaceId),
+          eq(schema.processingRuns.id, f.runId),
+        ),
+      );
+    await assert.rejects(automatic(), code("conflict"));
+    const next = await repo.request(
+      f.principal,
+      f.workspaceId,
+      { commandId: randomUUID(), noteId: f.noteId },
+      policy,
+      { runId: f.runId, generation: 2 },
+    );
+    assert.notEqual(next.id, jobs[0].id);
+    assert.equal(next.source.generation, 2);
+  });
+
+  void it("automatic delivery after a manual request does not create another paid intent", async () => {
+    const f = await fixture();
+    const manual = await f.request();
+    const automatic = await repo.request(
+      f.principal,
+      f.workspaceId,
+      { commandId: randomUUID(), noteId: f.noteId },
+      policy,
+      { runId: f.runId, generation: 1 },
+    );
+    assert.equal(automatic.id, manual.id);
+  });
+
   void it("deduplicates concurrent exact requests, pins policy, and rejects changed note/actor", async () => {
     const f = await fixture();
     const commandId = randomUUID();
@@ -257,6 +324,7 @@ void describe("summary job repository", () => {
       code("command_reused"),
     );
     const second = { id: randomUUID(), email: null };
+    await sql`insert into auth.users (id) values (${second.id})`;
     await workspaceRepo.ensureWorkspace(second);
     await db
       .insert(schema.workspaceMemberships)
@@ -394,6 +462,7 @@ void describe("summary job repository", () => {
       const f = await fixture();
       const preparedJob = await prepared(f);
       const recordingActor = { id: randomUUID(), email: null };
+      await sql`insert into auth.users (id) values (${recordingActor.id})`;
       await workspaceRepo.ensureWorkspace(recordingActor);
       await db.insert(schema.workspaceMemberships).values({
         workspaceId: f.workspaceId,
@@ -529,6 +598,70 @@ void describe("summary job repository", () => {
     assert.equal((await repo.get(f.principal, f.workspaceId, p.job.id)).status, "superseded");
     await repo.fail(f.workspaceId, p.job.id, "failed", "late error");
     assert.equal((await f.request(p.job.id)).status, "superseded");
+  });
+
+  void it("summary assistant sources become stale on transcript correction without a note revision", async () => {
+    const f = await fixture();
+    const p = await prepared(f);
+    await repo.publish(f.workspaceId, p.job.id, p.reference, p.analysis);
+    const source = {
+      kind: "summary" as const,
+      id: p.job.id,
+      noteId: f.noteId,
+      label: "Saved Summary",
+      revision: 1,
+    };
+    const thread = await assistant.openThread(f.principal, f.workspaceId, randomUUID(), f.noteId);
+    const firstTurn = randomUUID();
+    await assistant.requestTurn(
+      f.principal,
+      f.workspaceId,
+      thread.id,
+      firstTurn,
+      "Read summary",
+      {},
+    );
+    await assistant.beginTurn(f.workspaceId, firstTurn);
+    assert.equal(
+      (
+        await assistant.completeTurn(f.workspaceId, firstTurn, {
+          text: "The meeting planned a release.",
+          tools: [],
+          sources: [source],
+        })
+      )?.status,
+      "succeeded",
+    );
+
+    await corrections.command(f.principal, f.workspaceId, f.noteId, f.runId, {
+      kind: "edit",
+      commandId: randomUUID(),
+      utteranceId: f.utterances[0]!.id,
+      expectedRevision: 0,
+      text: "Ship next week instead.",
+      startSeconds: 0,
+      endSeconds: 5,
+    });
+    assert.equal(f.note.revision, 1);
+
+    const secondTurn = randomUUID();
+    await assistant.requestTurn(
+      f.principal,
+      f.workspaceId,
+      thread.id,
+      secondTurn,
+      "Reuse the saved summary",
+      {},
+    );
+    await assistant.beginTurn(f.workspaceId, secondTurn);
+    await assert.rejects(
+      assistant.completeTurn(f.workspaceId, secondTurn, {
+        text: "The meeting planned a release.",
+        tools: [],
+        sources: [source],
+      }),
+      code("conflict"),
+    );
   });
 
   void it("revalidates note and profile revisions at pin/publication and reports saved output freshness", async () => {
@@ -860,6 +993,152 @@ void describe("summary job repository", () => {
     assert.equal(
       (await repo.publish(f.workspaceId, p.job.id, p.reference, p.analysis))?.version,
       1,
+    );
+  });
+
+  void it("authorizes overview, separates latest job from latest saved result, and preserves disabled history", async () => {
+    const f = await fixture();
+    const saved = await prepared(f);
+    await repo.publish(f.workspaceId, saved.job.id, saved.reference, saved.analysis);
+    const failed = await f.request();
+    await repo.fail(f.workspaceId, failed.id, "failed", "fixture failure");
+    const active = await f.request();
+    await sql`
+      update analysis_jobs set created_at = case
+        when id = ${saved.job.id} then '2026-01-01T00:00:00Z'::timestamptz
+        when id = ${failed.id} then '2026-01-02T00:00:00Z'::timestamptz
+        else '2026-01-03T00:00:00Z'::timestamptz end
+      where workspace_id = ${f.workspaceId} and id in (${saved.job.id}, ${failed.id}, ${active.id})`;
+
+    const overview = await repo.overview(f.principal, f.workspaceId, f.noteId, true);
+    assert.equal(overview.latestJob?.id, active.id);
+    assert.equal(overview.latestJob?.status, "queued");
+    assert.equal(overview.latestSummaryJobId, saved.job.id);
+    assert.equal(overview.canGenerate, true);
+    assert.equal(overview.unavailableReason, null);
+
+    await repo.fail(f.workspaceId, active.id, "failed", "second fixture failure");
+    const terminal = await repo.overview(f.principal, f.workspaceId, f.noteId, true);
+    assert.equal(terminal.latestJob?.id, active.id);
+    assert.equal(terminal.latestJob?.status, "failed");
+    assert.equal(terminal.latestSummaryJobId, saved.job.id);
+
+    const disabled = await repo.overview(f.principal, f.workspaceId, f.noteId, false);
+    assert.equal(disabled.latestSummaryJobId, saved.job.id);
+    assert.equal(disabled.canGenerate, false);
+    assert.equal(disabled.unavailableReason, "Summary generation is disabled.");
+
+    const stranger = { id: randomUUID(), email: null };
+    await sql`insert into auth.users (id) values (${stranger.id})`;
+    await workspaceRepo.ensureWorkspace(stranger);
+    await assert.rejects(repo.overview(stranger, f.workspaceId, f.noteId, true), code("forbidden"));
+    await assert.rejects(
+      repo.history(stranger, f.workspaceId, f.noteId, undefined, 10),
+      code("forbidden"),
+    );
+  });
+
+  void it("paginates version history stably and rejects malformed or cross-note cursors", async () => {
+    const f = await fixture();
+    const saved = [];
+    for (let index = 0; index < 3; index += 1) {
+      const output = await prepared(f);
+      const result = await repo.publish(
+        f.workspaceId,
+        output.job.id,
+        output.reference,
+        output.analysis,
+      );
+      assert.ok(result);
+      saved.push(result);
+    }
+    await sql`
+      update note_summaries set created_at = '2026-02-01T00:00:00Z'::timestamptz
+      where workspace_id = ${f.workspaceId} and note_id = ${f.noteId}`;
+
+    const first = await repo.history(f.principal, f.workspaceId, f.noteId, undefined, 2);
+    assert.deepEqual(
+      first.items.map((item) => item.version),
+      [3, 2],
+    );
+    assert.ok(first.nextCursor);
+    const second = await repo.history(f.principal, f.workspaceId, f.noteId, first.nextCursor, 2);
+    assert.deepEqual(
+      second.items.map((item) => item.version),
+      [1],
+    );
+    assert.equal(second.nextCursor, null);
+    assert.equal(new Set([...first.items, ...second.items].map((item) => item.jobId)).size, 3);
+
+    await assert.rejects(
+      repo.history(f.principal, f.workspaceId, f.noteId, "not-a-cursor", 2),
+      code("invalid_cursor"),
+    );
+    const otherNote = await workspaceRepo.saveNote(f.principal, f.workspaceId, {
+      commandId: randomUUID(),
+      id: randomUUID(),
+      expectedRevision: 0,
+      content: { title: "Other note", transcript: "" },
+    });
+    await assert.rejects(
+      repo.history(f.principal, f.workspaceId, otherNote.id, first.nextCursor, 2),
+      code("invalid_cursor"),
+    );
+  });
+
+  void it("reports source eligibility and hides deleted notes without mutating saved results", async () => {
+    const f = await fixture();
+    const output = await prepared(f);
+    await repo.publish(f.workspaceId, output.job.id, output.reference, output.analysis);
+
+    await db
+      .update(schema.processingRuns)
+      .set({ transcriptGeneration: 0 })
+      .where(
+        and(
+          eq(schema.processingRuns.workspaceId, f.workspaceId),
+          eq(schema.processingRuns.id, f.runId),
+        ),
+      );
+    const generationZero = await repo.overview(f.principal, f.workspaceId, f.noteId, true);
+    assert.equal(generationZero.canGenerate, false);
+    assert.equal(generationZero.unavailableReason, "A finalized transcript is required.");
+
+    await db
+      .update(schema.processingRuns)
+      .set({ transcriptGeneration: 2 })
+      .where(
+        and(
+          eq(schema.processingRuns.workspaceId, f.workspaceId),
+          eq(schema.processingRuns.id, f.runId),
+        ),
+      );
+    assert.equal((await repo.result(f.principal, f.workspaceId, output.job.id)).freshness, "stale");
+    await db
+      .update(schema.recordings)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(schema.recordings.workspaceId, f.workspaceId),
+          eq(schema.recordings.id, f.recordingId),
+        ),
+      );
+    const ineligible = await repo.overview(f.principal, f.workspaceId, f.noteId, true);
+    assert.equal(ineligible.canGenerate, false);
+    assert.equal(ineligible.unavailableReason, "A finalized transcript is required.");
+    assert.equal(ineligible.latestSummaryJobId, output.job.id);
+
+    await db
+      .update(schema.notes)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(schema.notes.workspaceId, f.workspaceId), eq(schema.notes.id, f.noteId)));
+    await assert.rejects(
+      repo.overview(f.principal, f.workspaceId, f.noteId, true),
+      code("not_found"),
+    );
+    await assert.rejects(
+      repo.history(f.principal, f.workspaceId, f.noteId, undefined, 10),
+      code("not_found"),
     );
   });
 });

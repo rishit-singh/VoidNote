@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
+import { platformTables } from "./platform-tables";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import * as schema from "../../src/db/schema";
@@ -26,6 +27,9 @@ async function teardown() {
   try {
     if (ownsTables) {
       for (const table of [
+        ...platformTables,
+        "summary_inference_reservations",
+        "summary_inference_budgets",
         "note_summaries",
         "analysis_jobs",
         "transcript_correction_outbox",
@@ -48,6 +52,8 @@ async function teardown() {
       ])
         await sql`drop table if exists ${sql(`public.${table}`)}`;
       await sql`drop schema if exists ${sql(migrationSchema)} cascade`;
+      await sql`drop table if exists auth.users`;
+      await sql`drop schema if exists auth`;
     }
   } finally {
     await lock`select pg_advisory_unlock(72002, 1)`;
@@ -61,7 +67,11 @@ try {
   const existing =
     await sql`select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname not in ('pg_catalog','information_schema') and n.nspname not like 'pg_toast%' and c.relkind in ('r','p','v','m','S')`;
   assert.equal(existing.length, 0, "refusing to migrate nonempty database");
+  const [authSchema] = await sql`select 1 from pg_namespace where nspname = 'auth'`;
+  assert.equal(authSchema, undefined, "refusing to own an existing auth schema");
   ownsTables = true;
+  await sql`create schema auth`;
+  await sql`create table auth.users (id uuid primary key)`;
   await migrate(db, {
     migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)),
     migrationsSchema: migrationSchema,
@@ -75,6 +85,7 @@ const code = (expected: WorkspaceError["code"]) => (error: unknown) =>
   error instanceof WorkspaceError && error.code === expected;
 async function fixture(initialize = true) {
   const principal = { id: randomUUID(), email: null };
+  await sql`insert into auth.users (id) values (${principal.id})`;
   const workspace = await workspaceRepo.ensureWorkspace(principal);
   const note = await workspaceRepo.saveNote(principal, workspace.id, {
     id: randomUUID(),

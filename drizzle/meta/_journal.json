@@ -71,6 +71,83 @@
       "when": 1795353054024,
       "tag": "0009_analysis_dispatch_fairness",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795448328850,
+      "tag": "0010_summary_inference_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795535696598,
+      "tag": "0011_summary_usage_settlement",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795596317916,
+      "tag": "0012_assistant_platform",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795613407593,
+      "tag": "0013_conversation_summaries",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795650853176,
+      "tag": "0014_application_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1795652017513,
+      "tag": "0015_research_connectors_profile_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795652726052,
+      "tag": "0016_service_budget_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795653099201,
+      "tag": "0017_connector_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795743633608,
+      "tag": "0018_self_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795746989996,
+      "tag": "0019_auth_identity_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1795821316811,
+      "tag": "0020_research-evidence-v2",
+      "breakpoints": true
     }
   ]
 }

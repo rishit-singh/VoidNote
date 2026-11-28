@@ -2,10 +2,18 @@ import { trace } from "@opentelemetry/api";
 import { GET } from "../../src/app/api/health/route";
 import { traceHealthRequest, traceHealthService } from "../../src/telemetry/spans";
 import { instrumentWorker } from "../../src/telemetry/worker";
+import { traceOperation } from "../../src/telemetry/operations";
 
 const worker = instrumentWorker({
   fetch(request: Request): Promise<Response> {
     if (new URL(request.url).pathname === "/api/health") return GET();
+    if (new URL(request.url).pathname === "/application") {
+      return traceOperation("worker.fetch", () =>
+        traceOperation("trpc.assistant.messages", () =>
+          Promise.resolve(Response.json({ ok: true })),
+        ),
+      );
+    }
 
     const requestId = crypto.randomUUID();
     return traceHealthRequest(requestId, () =>

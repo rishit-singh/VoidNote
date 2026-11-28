@@ -17,6 +17,7 @@ import {
   putRecordingSession,
 } from "@/lib/idb-recordings";
 import { recordingRequest } from "@/lib/recording-processing-client";
+import { importedRecordingMimeType } from "@/lib/recording-media";
 import {
   MAX_RECORDING_BYTES,
   RECORDING_SIZE_LABEL,
@@ -371,21 +372,20 @@ export const useCaptureStore = create<CaptureState>((set, get) => {
       const epoch = useNoteStore.getState().epoch;
       let release: (() => void) | undefined;
       try {
-        if (!file.size || !file.type.startsWith("audio/"))
-          throw new Error("Choose a non-empty audio file.");
         if (file.size > MAX_RECORDING_BYTES)
           throw new Error(`Choose audio up to ${RECORDING_SIZE_LABEL}.`);
         release = await acquireCaptureLock();
         const owner = await prepareOwner(noteId, true);
+        const mimeType = await importedRecordingMimeType(file);
         if (!currentOwner(owner)) throw new Error("Workspace changed before adding audio.");
-        const session = await useRecordingStore.getState().startSession(noteId, file.type, "file");
+        const session = await useRecordingStore.getState().startSession(noteId, mimeType, "file");
         id = session.id;
         if (sameScope(owner)) useRecordingStore.setState({ activeSessionId: id, error: null });
         if (sameScope(owner)) set({ status: "stopping", sessionId: id });
         for (let offset = 0; offset < file.size; offset += 1024 * 1024)
           await useRecordingStore
             .getState()
-            .appendChunk(id, file.slice(offset, offset + 1024 * 1024, file.type));
+            .appendChunk(id, file.slice(offset, offset + 1024 * 1024, mimeType));
         const playback = await useRecordingStore.getState().finalizeSession(id, release);
         attachAudio(owner, id, playback);
         if (sameScope(owner)) set({ status: "idle" });

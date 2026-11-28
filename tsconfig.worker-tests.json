@@ -12,6 +12,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["tests/worker/**/*.ts", "tests/proofs/**/*.ts", "types/open-next.d.ts"]

@@ -1,13 +1,11 @@
 import { processingRequestSchema } from "@/contracts/recording-processing";
-import { recordingResponse, recordingEnvironment } from "@/server/recording-api";
+import { recordingResponse, processingEnvironment } from "@/server/recording-api";
 import { readJson } from "@/server/api";
 type Context = { params: Promise<{ workspaceId: string; noteId: string }> };
 export async function POST(request: Request, context: Context) {
   const { workspaceId, noteId } = await context.params;
   return recordingResponse(request, workspaceId, noteId, async (repo, principal) => {
-    const env = recordingEnvironment();
-    if (!env.PYANNOTE_API_KEY || !env.RECORDING_CAPABILITY_SECRET)
-      throw new Error("Configure the finalized transcription provider.");
+    const env = processingEnvironment();
     const command = await readJson(request, processingRequestSchema);
     const run = await repo.requestProcessing(
       principal,

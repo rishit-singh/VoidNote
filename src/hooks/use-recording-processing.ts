@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { useNoteStore } from "@/stores/use-note-store";
 import { useAudioPlaybackStore } from "@/stores/use-audio-playback-store";
 import { useRecordingStore, isOwnedSession } from "@/stores/use-recording-store";
-import { getQueryRuntime, notifyQueryChange } from "@/lib/query-runtime";
+import { getQueryRuntime } from "@/lib/query-runtime";
 import {
   processingJobKey,
   queueRecordingProcessing,
@@ -13,6 +13,9 @@ import {
   useProcessingJobs,
   beginProcessingRetryObservation,
   settleProcessingRetryObservation,
+  recordingProcessingView,
+  refreshRecordingProcessing,
+  submitRecordingProcessing,
 } from "@/lib/recording-processing-client";
 
 export interface SelectedProcessingRecording {
@@ -29,9 +32,28 @@ export function useRecordingOverview(noteId?: string, polling = false) {
     session && noteId
       ? processingJobKey(epoch, session.user.id, session.workspace.id, noteId)
       : undefined;
-  const retry = useProcessingJobs((s) => (polling && key ? s.jobs[key]?.retry : undefined));
+  const job = useProcessingJobs((s) => (polling && key ? s.jobs[key] : undefined));
+  const retry = job?.retry;
+  const pendingRecordingId = useRecordingStore((s) => {
+    if (!polling || !session || !noteId) return undefined;
+    return Object.values(s.sessions).find(
+      (local) =>
+        local.noteId === noteId &&
+        local.userId === session.user.id &&
+        local.workspaceId === session.workspace.id &&
+        local.status === "finalized" &&
+        local.processing === "submitted",
+    )?.id;
+  });
   const query = useQuery(
-    recordingOverviewOptions(runtime, session?.workspace.id, noteId, polling, retry),
+    recordingOverviewOptions(
+      runtime,
+      session?.workspace.id,
+      noteId,
+      polling,
+      retry,
+      job?.acceptance?.recordingId ?? pendingRecordingId,
+    ),
   );
   useEffect(() => {
     if (!polling || !key || !retry) return;
@@ -50,6 +72,8 @@ export function useRecordingProcessing(noteId: string, selection?: SelectedProce
   const session = useNoteStore((s) => s.session);
   const epoch = useNoteStore((s) => s.epoch);
   const sessions = useRecordingStore((s) => s.sessions);
+  const hydration = useRecordingStore((s) => s.hydration);
+  const hydrationError = useRecordingStore((s) => s.error);
   const owner = useAudioPlaybackStore((s) => s.owner);
   const runtime = getQueryRuntime();
   const query = useRecordingOverview(noteId);
@@ -78,7 +102,8 @@ export function useRecordingProcessing(noteId: string, selection?: SelectedProce
         : undefined;
   const recording =
     query.data?.recordings.find((r) => r.id === selectedId) ?? query.data?.recordings[0];
-  const run = query.data?.runs.find((r) => r.recordingId === recording?.id);
+  const recordingId = recording?.id ?? selectedId ?? local?.id ?? job?.acceptance?.recordingId;
+  const run = query.data?.runs.find((r) => r.recordingId === recordingId);
   const mutation = useMutation({
     mutationKey: ["recording-retry", runtime.scope, noteId],
     retry: false,
@@ -87,6 +112,7 @@ export function useRecordingProcessing(noteId: string, selection?: SelectedProce
         throw new Error("Sign in to resume processing.");
       const input = { workspaceId: session.workspace.id, noteId };
       let queued = false;
+      let started = false;
       try {
         if (run && run.status !== "succeeded") {
           await runtime.client.processing.retry.mutate({ ...input, runId: run.id });
@@ -95,19 +121,26 @@ export function useRecordingProcessing(noteId: string, selection?: SelectedProce
               processingJobKey(epoch, session.user.id, session.workspace.id, noteId),
               run,
             );
-        } else if (local?.status === "finalized" && (!recording || recording.status !== "ready")) {
+        } else if (
+          local?.status === "finalized" &&
+          local.processing !== "submitted" &&
+          (!recording || recording.status !== "ready")
+        ) {
           queued = true;
           await queueRecordingProcessing(local.id);
         } else if (recording && !run) {
-          await runtime.client.processing.start.mutate({
-            ...input,
-            command: { id: recording.id, recordingId: recording.id },
-          });
+          started = true;
+          await submitRecordingProcessing(
+            runtime,
+            { ...input, recordingId: recording.id },
+            processingJobKey(epoch, session.user.id, session.workspace.id, noteId),
+            owned,
+          );
         }
       } finally {
         // Keep the invocation's runtime across navigation and uncertain responses.
-        if (!queued && owned())
-          void notifyQueryChange("recordings", input, runtime).catch(() => {
+        if (!queued && !started && owned())
+          void refreshRecordingProcessing(input, runtime).catch(() => {
             // Query state owns refresh errors; a hanging read must not hold the retry UI busy.
           });
       }
@@ -116,21 +149,32 @@ export function useRecordingProcessing(noteId: string, selection?: SelectedProce
   const currentMutation =
     mutation.variables?.scope === runtime.scope && mutation.variables.noteId === noteId;
   const busy = (currentMutation && mutation.isPending) || !!job?.busy || !!job?.retry;
+  const statusError =
+    query.error?.message ?? (hydration === "error" ? (hydrationError ?? undefined) : undefined);
+  const mutationError = currentMutation ? mutation.error?.message : undefined;
+  const view = recordingProcessingView({
+    run,
+    recording,
+    local,
+    job,
+    loaded: !!query.data,
+    loading: query.isPending || hydration === "idle" || hydration === "loading",
+    dataUpdatedAt: query.dataUpdatedAt,
+    statusError,
+    mutationPending: !!currentMutation && mutation.isPending,
+    mutationError,
+  });
   const retry = async () => {
-    if (busy || !owned()) return;
+    if (busy || !owned() || view.retryAction !== "processing") return;
     await mutation.mutateAsync({ scope: runtime.scope, noteId }).catch(() => {
       // useMutation owns the error displayed by the existing UI.
     });
   };
   const refresh = async () => {
     if (!session || !owned()) return;
-    await runtime.queryClient.invalidateQueries({
-      queryKey: runtime.trpc.recordings.overview.queryKey({
-        workspaceId: session.workspace.id,
-        noteId,
-      }),
-      exact: true,
-    });
+    if (hydration === "error") await useRecordingStore.getState().recoverDraftSessions();
+    if (!owned()) return;
+    await refreshRecordingProcessing({ workspaceId: session.workspace.id, noteId }, runtime);
   };
   return {
     recording,
@@ -139,8 +183,12 @@ export function useRecordingProcessing(noteId: string, selection?: SelectedProce
     loaded: !!query.data,
     busy,
     progress: job?.progress,
+    ...view,
+    statusError,
     error:
-      (currentMutation ? mutation.error?.message : undefined) ?? job?.error ?? query.error?.message,
+      view.phase === "failed" || view.phase === "blocked" || view.phase === "uncertain"
+        ? (run?.error ?? mutationError ?? job?.error ?? undefined)
+        : undefined,
     retry,
     refresh,
   };

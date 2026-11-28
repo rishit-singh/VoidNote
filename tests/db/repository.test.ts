@@ -17,6 +17,7 @@ import {
   note,
   person,
   repository as repo,
+  seedAuthIdentity,
   setupDatabase,
   sql,
   teardownDatabase,
@@ -51,7 +52,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     const { principal, workspaceId } = await workspace();
     assert.deepEqual(await repo.overview(principal, workspaceId), {
       notes: 0,
-      profiles: 0,
+      profiles: 1,
       recordings: 0,
       recordedSeconds: 0,
       recentRecordings: [],
@@ -97,7 +98,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     await repo.saveNote(outsider.principal, outsider.workspaceId, note());
     const result = await repo.overview(principal, workspaceId);
     assert.equal(result.notes, 7);
-    assert.equal(result.profiles, 1);
+    assert.equal(result.profiles, 2);
     assert.equal(result.recordings, 5);
     assert.equal(result.recordedSeconds, 12.5);
     assert.deepEqual(
@@ -126,6 +127,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
 
   void it("bootstraps one workspace and membership under concurrent first use", async () => {
     const principal = { id: randomUUID(), email: "concurrent@example.invalid" };
+    await seedAuthIdentity(principal.id);
     const results = await Promise.all(
       Array.from({ length: 6 }, () => repo.ensureWorkspace(principal)),
     );
@@ -149,7 +151,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     assert.deepEqual(await repo.getPerson(principal, workspaceId, p.id), p);
     assert.deepEqual(await counts(workspaceId), {
       notes: 1,
-      people: 1,
+      people: 2,
       events: 2,
       receipts: 2,
       outbox: 2,
@@ -184,7 +186,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
       assert.equal(committed.title, "Must roll back");
       assert.deepEqual(await counts(workspaceId), {
         notes: 1,
-        people: 0,
+        people: 1,
         events: 2,
         receipts: 2,
         outbox: 2,
@@ -277,7 +279,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     for (const result of results) assert.deepEqual(result, results[0]);
     assert.deepEqual(await counts(workspaceId), {
       notes: 1,
-      people: 0,
+      people: 1,
       events: 1,
       receipts: 1,
       outbox: 1,
@@ -289,7 +291,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     for (const result of edits) assert.deepEqual(result, edits[0]);
     assert.deepEqual(await counts(workspaceId), {
       notes: 1,
-      people: 0,
+      people: 1,
       events: 2,
       receipts: 2,
       outbox: 2,
@@ -316,7 +318,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     assert.deepEqual(await repo.getNote(principal, workspaceId, initial.id), winner);
     assert.deepEqual(await counts(workspaceId), {
       notes: 1,
-      people: 0,
+      people: 1,
       events: 2,
       receipts: 2,
       outbox: 2,
@@ -365,7 +367,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     }
     assert.deepEqual(await counts(workspaceId), {
       notes: 2,
-      people: 0,
+      people: 1,
       events: 3,
       receipts: 3,
       outbox: 3,
@@ -399,7 +401,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
       assert.deepEqual(stored, winner);
       assert.deepEqual(await counts(workspaceId), {
         notes: entity === "note" ? 1 : 0,
-        people: entity === "person" ? 1 : 0,
+        people: entity === "person" ? 2 : 1,
         events: 2,
         receipts: 2,
         outbox: 2,
@@ -458,7 +460,11 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
       code("conflict"),
     );
     assert.deepEqual((await repo.listNotes(b.principal, b.workspaceId, page)).items, []);
-    assert.deepEqual((await repo.listPeople(b.principal, b.workspaceId, peoplePage)).items, []);
+    const self = await repo.getSelfProfile(b.principal, b.workspaceId);
+    assert.ok(self);
+    assert.deepEqual((await repo.listPeople(b.principal, b.workspaceId, peoplePage)).items, [
+      toPersonListItem(self),
+    ]);
     assert.deepEqual(await counts(a.workspaceId), beforeA);
     assert.deepEqual(await counts(b.workspaceId), beforeB);
   });
@@ -501,7 +507,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
       pgCode("23503"),
     );
     await assert.rejects(
-      sql`update people set account_id = ${b.principal.id} where workspace_id = ${a.workspaceId}`,
+      sql`update people set account_id = ${b.principal.id} where workspace_id = ${a.workspaceId} and id = ${p.id}`,
       pgCode("23503"),
     );
   });
@@ -528,7 +534,7 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     assert.equal(stored?.revision, 2);
     assert.deepEqual(await counts(workspaceId), {
       notes: 1,
-      people: 0,
+      people: 1,
       events: 2,
       receipts: 2,
       outbox: 2,
@@ -546,12 +552,12 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
       expectedRevision: original.revision,
       content: { displayName: "Ada", description: `${"😀".repeat(160)}Updated biography` },
     });
-    const initialList = await repo.listPeople(principal, workspaceId, peoplePage);
+    const initialList = await repo.listPeople(principal, workspaceId, { ...peoplePage, q: "Ada" });
     assert.deepEqual(initialList.items, [toPersonListItem(original)]);
     assert.equal(initialList.items[0]?.descriptionPreview, `${"a".repeat(159)}😀`);
 
     const updated = await repo.savePerson(principal, workspaceId, edit);
-    const result = await repo.listPeople(principal, workspaceId, peoplePage);
+    const result = await repo.listPeople(principal, workspaceId, { ...peoplePage, q: "Ada" });
     assert.deepEqual(result, { items: [toPersonListItem(updated)], nextCursor: null });
     assert.deepEqual(personListSchema.parse(result), result);
     assert.equal(Object.hasOwn(result.items[0]!, "description"), false);
@@ -591,12 +597,16 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
     await assert.rejects(
       repo.savePerson(principal, workspaceId, person({ id: created.id, expectedRevision: 3 })),
     );
-    assert.deepEqual((await repo.listPeople(principal, workspaceId, peoplePage)).items, []);
+    const self = await repo.getSelfProfile(principal, workspaceId);
+    assert.ok(self);
+    assert.deepEqual((await repo.listPeople(principal, workspaceId, peoplePage)).items, [
+      toPersonListItem(self),
+    ]);
     const history = await repo.history(principal, workspaceId, "person", created.id, page);
     assert.deepEqual(history.items.map((event) => event.revision).sort(), [1, 2, 3]);
     assert.deepEqual(await counts(workspaceId), {
       notes: 0,
-      people: 1,
+      people: 2,
       events: 3,
       receipts: 3,
       outbox: 3,
@@ -606,7 +616,9 @@ void describe("workspace repository / real PostgreSQL", { concurrency: false }, 
   void it("paginates notes with tied timestamps and people without duplicates or omissions", async () => {
     const { principal, workspaceId } = await workspace();
     const noteIds: string[] = [];
-    const personIds: string[] = [];
+    const self = await repo.getSelfProfile(principal, workspaceId);
+    assert.ok(self);
+    const personIds: string[] = [self.id];
     for (let i = 0; i < 7; i++) {
       noteIds.push((await repo.saveNote(principal, workspaceId, note())).id);
       personIds.push(

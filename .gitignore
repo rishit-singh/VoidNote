@@ -15,6 +15,7 @@ dist-ssr
 .open-next
 .wrangler
 supabase/.temp/
+supabase/.branches/
 .dev.vars
 .dev.vars.*
 !.dev.vars.example

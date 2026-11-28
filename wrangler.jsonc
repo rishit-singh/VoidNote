@@ -4,6 +4,12 @@
   "main": "worker.ts",
   "compatibility_date": "2026-11-13",
   "compatibility_flags": ["nodejs_compat"],
+  // Postgres.js 3.4.9's workerd entry rejects its detached socket reader during
+  // normal client.end(). Native node:net is supported by nodejs_compat and keeps
+  // query/cleanup failures attached to their owning request or durable step.
+  "alias": {
+    "postgres": "./node_modules/postgres/src/index.js",
+  },
   "upload_source_maps": true,
   "secrets": {
     "required": [],
@@ -17,14 +23,72 @@
     "head_sampling_rate": 1,
   },
   // Explicit opt-in until the migration and bounded provider proof are accepted.
-  "vars": { "SUMMARY_ENABLED": "false", "SUMMARY_MODEL": "" },
-  "ai": { "binding": "AI" },
-  "durable_objects": {
-    "bindings": [{ "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" }],
+  // Next fetch spans require HTTP-scoped telemetry context, which Workflows do
+  // not have. These spans are excluded by our telemetry policy in every runtime.
+  "vars": {
+    "NEXT_OTEL_FETCH_DISABLED": "1",
+    "SUMMARY_ENABLED": "false",
+    "SUMMARY_AUTO_ENABLED": "false",
+    "SUMMARY_MODEL": "",
+    "SUMMARY_BUDGET_ID": "",
+    "SUMMARY_REASONING_EFFORT": "none",
+    "ASSISTANT_ENABLED": "false",
+    "ASSISTANT_MODEL": "",
+    "ASSISTANT_BUDGET_ID": "",
+    "ASSISTANT_RATE_VERSION_ID": "",
+    "RESEARCH_ENABLED": "false",
+    "RESEARCH_DISCOVERY_ENABLED": "false",
+    "RESEARCH_SERVICE_BUDGET_ID": "",
+    "RESEARCH_SEARCH_UNIT_BOUND": "",
+    "COMPOSIO_ENABLED": "false",
+    "COMPOSIO_SLACK_AUTH_CONFIG_ID": "",
+    "COMPOSIO_SLACK_TOOL_VERSION": "",
+    "COMPOSIO_SERVICE_BUDGET_ID": "",
+    "COMPOSIO_OPERATION_UNIT_BOUND": "",
+    "CONVERSATION_SUMMARY_ENABLED": "false",
+    "CONVERSATION_SUMMARY_MODEL": "",
+    "CONVERSATION_SUMMARY_BUDGET_ID": "",
+    "CONVERSATION_SUMMARY_RATE_VERSION_ID": "",
+    "RESEARCH_MODEL": "",
+    "RESEARCH_BUDGET_ID": "",
+    "RESEARCH_RATE_VERSION_ID": "",
   },
-  "migrations": [{ "tag": "summary-agent-v1", "new_sqlite_classes": ["SummaryAgent"] }],
+  "ai": { "binding": "AI" },
+  "queues": {
+    "producers": [{ "binding": "EVENT_QUEUE", "queue": "voidnote-events-local" }],
+    "consumers": [
+      { "queue": "voidnote-events-local", "max_batch_size": 10, "max_batch_timeout": 1 },
+    ],
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
+      { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
+      { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
+    ],
+  },
+  "migrations": [
+    { "tag": "summary-agent-v1", "new_sqlite_classes": ["SummaryAgent"] },
+    { "tag": "assistant-agent-v1", "new_sqlite_classes": ["AssistantAgent"] },
+    { "tag": "activity-hub-v1", "new_sqlite_classes": ["ActivityHub"] },
+  ],
   "r2_buckets": [{ "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-local" }],
   "workflows": [
+    {
+      "binding": "RESEARCH_RUN_WORKFLOW",
+      "name": "voidnote-research-run-local",
+      "class_name": "ResearchRunWorkflow",
+    },
+    {
+      "binding": "CONVERSATION_SUMMARY_WORKFLOW",
+      "name": "voidnote-conversation-summary-local",
+      "class_name": "ConversationSummaryWorkflow",
+    },
+    {
+      "binding": "RESEARCH_WORKFLOW",
+      "name": "voidnote-research-local",
+      "class_name": "ResearchWorkflow",
+    },
     {
       "binding": "SUMMARY_WORKFLOW",
       "name": "voidnote-summary-local",
@@ -37,20 +101,173 @@
     },
   ],
   "env": {
+    // Local application development: Supabase Auth/Postgres + persistent workerd.
+    "development": {
+      "name": "voidnote-development",
+      "workers_dev": false,
+      "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+      "secrets": { "required": ["SUPABASE_PUBLISHABLE_KEY", "RECORDING_CAPABILITY_SECRET"] },
+      "vars": {
+        "NEXTJS_ENV": "production",
+        "NEXT_OTEL_FETCH_DISABLED": "1",
+        "APP_URL": "http://localhost:8787",
+        "SUPABASE_URL": "http://127.0.0.1:54321",
+        "SUMMARY_ENABLED": "false",
+        "SUMMARY_AUTO_ENABLED": "false",
+        "SUMMARY_MODEL": "",
+        "SUMMARY_BUDGET_ID": "",
+        "SUMMARY_REASONING_EFFORT": "none",
+        "ASSISTANT_ENABLED": "false",
+        "ASSISTANT_MODEL": "",
+        "ASSISTANT_BUDGET_ID": "",
+        "ASSISTANT_RATE_VERSION_ID": "",
+        "RESEARCH_ENABLED": "false",
+        "RESEARCH_DISCOVERY_ENABLED": "false",
+        "RESEARCH_SERVICE_BUDGET_ID": "",
+        "RESEARCH_SEARCH_UNIT_BOUND": "",
+        "COMPOSIO_ENABLED": "false",
+        "COMPOSIO_SLACK_AUTH_CONFIG_ID": "",
+        "COMPOSIO_SLACK_TOOL_VERSION": "",
+        "COMPOSIO_SERVICE_BUDGET_ID": "",
+        "COMPOSIO_OPERATION_UNIT_BOUND": "",
+        "CONVERSATION_SUMMARY_ENABLED": "false",
+        "CONVERSATION_SUMMARY_MODEL": "",
+        "CONVERSATION_SUMMARY_BUDGET_ID": "",
+        "CONVERSATION_SUMMARY_RATE_VERSION_ID": "",
+        "RESEARCH_MODEL": "",
+        "RESEARCH_BUDGET_ID": "",
+        "RESEARCH_RATE_VERSION_ID": "",
+        "PYANNOTE_API_KEY": "",
+        "LOGFIRE_TOKEN": "",
+        "LOGFIRE_BASE_URL": "",
+        "LOGFIRE_ENVIRONMENT": "development",
+      },
+      // Paid inference is gated by explicit local policy and a durable allowance.
+      "ai": { "binding": "AI", "remote": true },
+      "queues": {
+        "producers": [{ "binding": "EVENT_QUEUE", "queue": "voidnote-events-development" }],
+        "consumers": [
+          { "queue": "voidnote-events-development", "max_batch_size": 10, "max_batch_timeout": 1 },
+        ],
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
+          { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
+          { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
+        ],
+      },
+      "r2_buckets": [
+        { "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-development" },
+      ],
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "00000000000000000000000000000000",
+          "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+        },
+      ],
+      "workflows": [
+        {
+          "binding": "RESEARCH_RUN_WORKFLOW",
+          "name": "voidnote-research-run-development",
+          "class_name": "ResearchRunWorkflow",
+        },
+        {
+          "binding": "CONVERSATION_SUMMARY_WORKFLOW",
+          "name": "voidnote-conversation-summary-development",
+          "class_name": "ConversationSummaryWorkflow",
+        },
+        {
+          "binding": "RESEARCH_WORKFLOW",
+          "name": "voidnote-research-development",
+          "class_name": "ResearchWorkflow",
+        },
+        {
+          "binding": "SUMMARY_WORKFLOW",
+          "name": "voidnote-summary-development",
+          "class_name": "SummaryWorkflow",
+        },
+        {
+          "binding": "PROCESS_RECORDING",
+          "name": "voidnote-processing-development",
+          "class_name": "RecordingProcessingWorkflow",
+        },
+      ],
+      "triggers": { "crons": ["* * * * *"] },
+    },
     // Keep assets explicit so environment-specific type generation includes ASSETS.
     "staging": {
       "name": "voidnote-staging",
+      "workers_dev": true,
+      "triggers": { "crons": ["* * * * *"] },
+      "queues": {
+        "producers": [{ "binding": "EVENT_QUEUE", "queue": "voidnote-events-staging" }],
+        "consumers": [
+          { "queue": "voidnote-events-staging", "max_batch_size": 10, "max_batch_timeout": 1 },
+        ],
+      },
       "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
-      "secrets": { "required": [] },
-      "vars": { "SUMMARY_ENABLED": "false", "SUMMARY_MODEL": "" },
+      "secrets": { "required": ["SUPABASE_PUBLISHABLE_KEY", "RECORDING_CAPABILITY_SECRET"] },
+      "vars": {
+        "NEXT_OTEL_FETCH_DISABLED": "1",
+        "LOGFIRE_ENVIRONMENT": "staging",
+        "APP_URL": "https://voidnote-staging.rsrishitsingh.workers.dev",
+        "SUPABASE_URL": "https://csmrsgywdosnrcfmnmuj.supabase.co",
+        "SUMMARY_ENABLED": "false",
+        "SUMMARY_AUTO_ENABLED": "false",
+        "SUMMARY_MODEL": "",
+        "SUMMARY_BUDGET_ID": "",
+        "SUMMARY_REASONING_EFFORT": "none",
+        "ASSISTANT_ENABLED": "false",
+        "ASSISTANT_MODEL": "",
+        "ASSISTANT_BUDGET_ID": "",
+        "ASSISTANT_RATE_VERSION_ID": "",
+        "RESEARCH_ENABLED": "false",
+        "RESEARCH_DISCOVERY_ENABLED": "false",
+        "RESEARCH_SERVICE_BUDGET_ID": "",
+        "RESEARCH_SEARCH_UNIT_BOUND": "",
+        "COMPOSIO_ENABLED": "false",
+        "COMPOSIO_SLACK_AUTH_CONFIG_ID": "",
+        "COMPOSIO_SLACK_TOOL_VERSION": "",
+        "COMPOSIO_SERVICE_BUDGET_ID": "",
+        "COMPOSIO_OPERATION_UNIT_BOUND": "",
+        "CONVERSATION_SUMMARY_ENABLED": "false",
+        "CONVERSATION_SUMMARY_MODEL": "",
+        "CONVERSATION_SUMMARY_BUDGET_ID": "",
+        "CONVERSATION_SUMMARY_RATE_VERSION_ID": "",
+        "RESEARCH_MODEL": "",
+        "RESEARCH_BUDGET_ID": "",
+        "RESEARCH_RATE_VERSION_ID": "",
+      },
       "ai": { "binding": "AI" },
+      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "4e8f9846dda24e7ba951182735b25587" }],
       "durable_objects": {
-        "bindings": [{ "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" }],
+        "bindings": [
+          { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
+          { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
+          { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
+        ],
       },
       "r2_buckets": [
         { "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-staging" },
       ],
       "workflows": [
+        {
+          "binding": "RESEARCH_RUN_WORKFLOW",
+          "name": "voidnote-research-run-staging",
+          "class_name": "ResearchRunWorkflow",
+        },
+        {
+          "binding": "CONVERSATION_SUMMARY_WORKFLOW",
+          "name": "voidnote-conversation-summary-staging",
+          "class_name": "ConversationSummaryWorkflow",
+        },
+        {
+          "binding": "RESEARCH_WORKFLOW",
+          "name": "voidnote-research-staging",
+          "class_name": "ResearchWorkflow",
+        },
         {
           "binding": "SUMMARY_WORKFLOW",
           "name": "voidnote-summary-staging",
@@ -65,15 +282,40 @@
     },
     "production": {
       "name": "voidnote-production",
+      "queues": {
+        "producers": [{ "binding": "EVENT_QUEUE", "queue": "voidnote-events-production" }],
+        "consumers": [
+          { "queue": "voidnote-events-production", "max_batch_size": 10, "max_batch_timeout": 1 },
+        ],
+      },
       "workers_dev": true,
       "ai": { "binding": "AI" },
       "durable_objects": {
-        "bindings": [{ "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" }],
+        "bindings": [
+          { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
+          { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
+          { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
+        ],
       },
       "r2_buckets": [
         { "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-production" },
       ],
       "workflows": [
+        {
+          "binding": "RESEARCH_RUN_WORKFLOW",
+          "name": "voidnote-research-run-production",
+          "class_name": "ResearchRunWorkflow",
+        },
+        {
+          "binding": "CONVERSATION_SUMMARY_WORKFLOW",
+          "name": "voidnote-conversation-summary-production",
+          "class_name": "ConversationSummaryWorkflow",
+        },
+        {
+          "binding": "RESEARCH_WORKFLOW",
+          "name": "voidnote-research-production",
+          "class_name": "ResearchWorkflow",
+        },
         {
           "binding": "SUMMARY_WORKFLOW",
           "name": "voidnote-summary-production",
@@ -96,8 +338,32 @@
         },
       ],
       "vars": {
+        "NEXT_OTEL_FETCH_DISABLED": "1",
         "SUMMARY_ENABLED": "false",
+        "SUMMARY_AUTO_ENABLED": "false",
         "SUMMARY_MODEL": "",
+        "SUMMARY_BUDGET_ID": "",
+        "SUMMARY_REASONING_EFFORT": "none",
+        "ASSISTANT_ENABLED": "false",
+        "ASSISTANT_MODEL": "",
+        "ASSISTANT_BUDGET_ID": "",
+        "ASSISTANT_RATE_VERSION_ID": "",
+        "RESEARCH_ENABLED": "false",
+        "RESEARCH_DISCOVERY_ENABLED": "false",
+        "RESEARCH_SERVICE_BUDGET_ID": "",
+        "RESEARCH_SEARCH_UNIT_BOUND": "",
+        "COMPOSIO_ENABLED": "false",
+        "COMPOSIO_SLACK_AUTH_CONFIG_ID": "",
+        "COMPOSIO_SLACK_TOOL_VERSION": "",
+        "COMPOSIO_SERVICE_BUDGET_ID": "",
+        "COMPOSIO_OPERATION_UNIT_BOUND": "",
+        "CONVERSATION_SUMMARY_ENABLED": "false",
+        "CONVERSATION_SUMMARY_MODEL": "",
+        "CONVERSATION_SUMMARY_BUDGET_ID": "",
+        "CONVERSATION_SUMMARY_RATE_VERSION_ID": "",
+        "RESEARCH_MODEL": "",
+        "RESEARCH_BUDGET_ID": "",
+        "RESEARCH_RATE_VERSION_ID": "",
         "APP_URL": "https://voidnote.app",
         "SUPABASE_URL": "https://rbacdtsvrogopijybsep.supabase.co",
       },

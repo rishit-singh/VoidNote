@@ -14,6 +14,7 @@ export function NoteAudio({ noteId }: { noteId: string }) {
   const storageError = useRecordingStore((s) => s.error);
   const busy = !["idle", "error"].includes(status);
   const interrupted = p.local && p.local.status !== "finalized" && p.local.chunkCount > 0;
+
   return (
     <section aria-label="Note audio" className="flex flex-col gap-4">
       {!p.recording && !p.local && (
@@ -21,7 +22,7 @@ export function NoteAudio({ noteId }: { noteId: string }) {
           <input
             ref={file}
             type="file"
-            accept="audio/*"
+            accept="audio/*,video/mp4,.m4a"
             aria-label="Upload audio"
             className="sr-only"
             disabled={busy || !p.loaded}

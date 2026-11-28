@@ -7,6 +7,7 @@ import { build } from "esbuild";
 import type { CorrectionResult } from "../../src/contracts/transcript-corrections.ts";
 import type { Principal } from "../../src/contracts/workspace.ts";
 import type { AnalysisJob } from "../../src/contracts/analysis/index.ts";
+import type { AssistantOutputScope } from "../../src/contracts/assistant/index.ts";
 
 type Backend = typeof import("../../src/server/trpc/context.ts") &
   typeof import("../../src/ai/runtime/index.ts") &
@@ -72,6 +73,25 @@ let repositoryResult: (method: string, args: unknown[]) => unknown;
 let summaryEnabled = true;
 let summaryNotifications: { workspaceId: string; jobId: string; cancel: boolean }[] = [];
 let evidenceReads = 0;
+let assistantLeaseCalls: { principal: Principal; scope: AssistantOutputScope }[] = [];
+let mintAssistantOutputLease: (
+  principal: Principal,
+  scope: AssistantOutputScope,
+) => Promise<{ ticket: string; expiresAt: string }>;
+const assistantOutputScope: AssistantOutputScope = {
+  workspaceId,
+  threadId: "116909d2-a678-4b5b-82d1-49e65368f9e9",
+  turnId: "e620bb2c-5679-49fa-b2b8-345487462b5c",
+};
+const assistantOutputLease = {
+  ticket: "a".repeat(64),
+  expiresAt: "2026-11-25T12:00:30.000Z",
+};
+
+function unexpectedRuntimeService(): never {
+  throw new Error("Unexpected application runtime service access in auth fixture.");
+}
+
 const summaryJob: AnalysisJob = {
   id: "116909d2-a678-4b5b-82d1-49e65368f9e9",
   commandId: "116909d2-a678-4b5b-82d1-49e65368f9e9",
@@ -116,6 +136,9 @@ const methods = [
   "deleteNote",
   "listPeople",
   "getPerson",
+  "getSelfProfile",
+  "createSelfProfile",
+  "linkSelfProfile",
   "savePerson",
   "deletePerson",
   "history",
@@ -214,10 +237,14 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
               path: args.path,
               external: true,
             }));
-            build.onResolve({ filter: /^@\/server\/analysis$/ }, (args) => ({
-              path: args.path,
-              external: true,
-            }));
+            // Keep real routers/auth contracts, replacing only runtime composition.
+            build.onResolve(
+              { filter: /^@\/server\/(?:analysis|assistant|research|activity|connectors)$/ },
+              (args) => ({
+                path: args.path,
+                external: true,
+              }),
+            );
             build.onResolve({ filter: /^@\/server\/transcript-correction-api$/ }, (args) => ({
               path: args.path,
               external: true,
@@ -244,6 +271,76 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
           },
         };
       if (name === "@/db/repository") return { createWorkspaceRepository: () => repository };
+      if (name === "@/db/assistant") {
+        return { createAssistantRepository: unexpectedRuntimeService };
+      }
+      if (name === "@/db/activity") {
+        return {
+          createActivityRepository: () => ({
+            list: (...args: unknown[]) => {
+              calls.push({ method: "activity.list", args });
+              return Promise.resolve({ items: [], nextCursor: null, unreadCount: 0 });
+            },
+            changes: (...args: unknown[]) => {
+              calls.push({ method: "activity.changes", args });
+              return Promise.resolve({ items: [], cursor: "0", hasMore: false });
+            },
+            markRead: (...args: unknown[]) => {
+              calls.push({ method: "activity.markRead", args });
+              return Promise.resolve({ acknowledged: true });
+            },
+          }),
+        };
+      }
+      if (name === "@/server/activity") {
+        return {
+          notifyApplicationEvents: () => {},
+          createActivitySubscription: unexpectedRuntimeService,
+        };
+      }
+      if (name === "@/server/connectors") {
+        return {
+          getSlackConnectorStatus: unexpectedRuntimeService,
+          createSlackConnection: unexpectedRuntimeService,
+          shareSavedBrief: unexpectedRuntimeService,
+        };
+      }
+      if (name === "@/db/conversation-summaries") {
+        return {
+          createConversationSummaryRepository: () => ({
+            latest: (...args: unknown[]) => {
+              calls.push({ method: "conversationSummary.latest", args });
+              return Promise.resolve(null);
+            },
+          }),
+        };
+      }
+      if (name === "@/db/inference") {
+        return { createInferenceRepository: unexpectedRuntimeService };
+      }
+      if (name === "@/db/contacts") {
+        return { createContactRepository: unexpectedRuntimeService };
+      }
+      if (name === "@/server/assistant") {
+        return {
+          assistantPolicy: unexpectedRuntimeService,
+          notifyAssistantTurn: unexpectedRuntimeService,
+          createAssistantOutputLease: (principal: Principal, scope: AssistantOutputScope) => {
+            assistantLeaseCalls.push({ principal, scope });
+            return mintAssistantOutputLease(principal, scope);
+          },
+        };
+      }
+      if (name === "@/server/research") {
+        return {
+          researchPolicy: unexpectedRuntimeService,
+          requestContactResearch: unexpectedRuntimeService,
+          readContactResearch: unexpectedRuntimeService,
+          listContactResearch: unexpectedRuntimeService,
+          cancelContactResearch: unexpectedRuntimeService,
+          retryContactResearch: unexpectedRuntimeService,
+        };
+      }
       if (name === "@/db/analysis") {
         return {
           createAnalysisRepository: () =>
@@ -260,6 +357,11 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
       }
       if (name === "@/server/analysis") {
         return {
+          traceSummaryAcceptance: (
+            _workspaceId: string,
+            _commandId: string,
+            work: () => Promise<unknown>,
+          ) => work(),
           analysisPolicy: () => {
             if (!summaryEnabled) {
               return null;
@@ -293,7 +395,7 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
         };
       if (name === "@/server/recording-api")
         return {
-          recordingEnvironment: () => {
+          processingEnvironment: () => {
             throw new Error("Unexpected provider access");
           },
         };
@@ -314,11 +416,53 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
     summaryEnabled = true;
     summaryNotifications = [];
     evidenceReads = 0;
+    assistantLeaseCalls = [];
+    mintAssistantOutputLease = () => Promise.resolve(assistantOutputLease);
     authenticate = () => Promise.resolve(user);
     repositoryResult = (method) =>
       method === "ensureWorkspace"
         ? { id: workspaceId, name: "Workspace" }
         : { items: [], nextCursor: null };
+  });
+
+  void it("authenticates self-profile reads and mutations with strict public inputs", async () => {
+    repositoryResult = () => null;
+    const get = await handle(request("selfProfile.get", { workspaceId }));
+    assert.equal(get.status, 200);
+    assert.deepEqual(calls[0], { method: "getSelfProfile", args: [user, workspaceId] });
+    const record = {
+      workspaceId,
+      id: noteId,
+      displayName: "Me",
+      description: "",
+      revision: 1,
+      createdAt: "2026-11-26T00:00:00.000Z",
+      updatedAt: "2026-11-26T00:00:00.000Z",
+      deletedAt: null,
+    };
+    repositoryResult = () => record;
+    const create = { workspaceId, commandId: runId, displayName: "Me" };
+    assert.equal((await handle(request("selfProfile.create", create, true))).status, 200);
+    assert.deepEqual(calls.at(-1), { method: "createSelfProfile", args: [user, create] });
+    const link = {
+      workspaceId,
+      commandId: runId,
+      personId: noteId,
+      expectedRevision: 1,
+      expectedSelfId: null,
+    };
+    assert.equal((await handle(request("selfProfile.link", link, true))).status, 200);
+    assert.deepEqual(calls.at(-1), { method: "linkSelfProfile", args: [user, link] });
+    const count = calls.length;
+    assert.equal(
+      (await handle(request("selfProfile.link", { ...link, accountId: user.id }, true))).status,
+      400,
+    );
+    assert.equal(calls.length, count);
+    authenticate = () =>
+      Promise.reject(new backend.AuthError("unauthorized", "Sign in to continue.", 401));
+    assert.equal((await handle(request("selfProfile.get", { workspaceId }))).status, 401);
+    assert.equal(calls.length, count);
   });
 
   void it("deduplicates verified identity within a batch, isolates requests, and closes each database operation", async () => {
@@ -363,6 +507,120 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
     }
     assert.equal(authentications, 0);
     assert.equal(opened, 0);
+  });
+
+  void it("authorizes derived summary reads with the verified principal and strict thread scope", async () => {
+    const scope = { workspaceId, threadId: assistantOutputScope.threadId };
+    const verified = { ...user, id: noteId };
+    authenticate = () => Promise.resolve(verified);
+    const response = await handle(request("assistant.conversationSummary", scope));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { result: { data: null } });
+    assert.deepEqual(calls, [
+      {
+        method: "conversationSummary.latest",
+        args: [verified, scope.workspaceId, scope.threadId],
+      },
+    ]);
+    assert.equal(opened, closed);
+    assert.equal(
+      (await handle(request("assistant.conversationSummary", { ...scope, actorId: user.id })))
+        .status,
+      400,
+    );
+    authenticate = () =>
+      Promise.reject(new backend.AuthError("unauthorized", "Sign in to continue.", 401));
+    assert.equal((await handle(request("assistant.conversationSummary", scope))).status, 401);
+    assert.equal(calls.length, 1);
+  });
+
+  void it("scopes activity reads to verified identity and rejects caller-selected recipients", async () => {
+    const verified = { ...user, id: noteId };
+    authenticate = () => Promise.resolve(verified);
+    const response = await handle(request("activity.list", { workspaceId, limit: 20 }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls, [
+      {
+        method: "activity.list",
+        args: [verified, workspaceId, undefined, 20],
+      },
+    ]);
+    assert.equal(
+      (await handle(request("activity.list", { workspaceId, userId: user.id }))).status,
+      400,
+    );
+    assert.equal(calls.length, 1);
+  });
+
+  void it("rejects unauthenticated or cross-origin activity tickets before minting", async () => {
+    const response = await handle(
+      request("activity.subscribe", { workspaceId }, true, {
+        origin: "https://evil.test",
+      }),
+    );
+    assert.equal(response.status, 403);
+    assert.equal(authentications, 0);
+    authenticate = () =>
+      Promise.reject(new backend.AuthError("unauthorized", "Sign in to continue.", 401));
+    assert.equal((await handle(request("activity.subscribe", { workspaceId }, true))).status, 401);
+    assert.equal(opened, 0);
+  });
+
+  void it("never mints an assistant output lease for unauthenticated requests", async () => {
+    authenticate = () =>
+      Promise.reject(new backend.AuthError("unauthorized", "Sign in to continue.", 401));
+    const response = await handle(request("assistant.outputLease", assistantOutputScope, true));
+    assert.equal(response.status, 401);
+    assert.equal((await response.json<ErrorBody>()).error.data.domainCode, "unauthorized");
+    assert.equal(authentications, 1);
+    assert.deepEqual(assistantLeaseCalls, []);
+    assert.equal(opened, 0);
+  });
+
+  void it("rejects cross-origin assistant output leases before authentication or minting", async () => {
+    for (const headers of [{ origin: "https://evil.test" }, { "sec-fetch-site": "cross-site" }]) {
+      const response = await handle(
+        request("assistant.outputLease", assistantOutputScope, true, headers),
+      );
+      assert.equal(response.status, 403);
+      assert.equal((await response.json<ErrorBody>()).error.data.domainCode, "forbidden");
+    }
+    assert.equal(authentications, 0);
+    assert.deepEqual(assistantLeaseCalls, []);
+    assert.equal(opened, 0);
+  });
+
+  void it("passes only the verified principal and validated scope to output-lease minting", async () => {
+    const verified = { ...user, id: noteId };
+    authenticate = () => Promise.resolve(verified);
+    const response = await handle(request("assistant.outputLease", assistantOutputScope, true));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { result: { data: assistantOutputLease } });
+    assert.deepEqual(assistantLeaseCalls, [{ principal: verified, scope: assistantOutputScope }]);
+    assert.equal(authentications, 1);
+
+    for (const input of [
+      { ...assistantOutputScope, actorId: user.id },
+      { ...assistantOutputScope, turnId: "not-a-turn-id" },
+    ]) {
+      assert.equal((await handle(request("assistant.outputLease", input, true))).status, 400);
+    }
+    assert.equal(assistantLeaseCalls.length, 1);
+    assert.equal(opened, 0);
+  });
+
+  void it("preserves output-lease service authorization failures and rejects invalid lease output", async () => {
+    mintAssistantOutputLease = () => {
+      throw new backend.WorkspaceError("forbidden", "Thread access denied.");
+    };
+    const denied = await handle(request("assistant.outputLease", assistantOutputScope, true));
+    assert.equal(denied.status, 403);
+    assert.equal((await denied.json<ErrorBody>()).error.data.domainCode, "forbidden");
+    mintAssistantOutputLease = () =>
+      Promise.resolve({ ...assistantOutputLease, ticket: "private-invalid-ticket" });
+    const invalid = await handle(request("assistant.outputLease", assistantOutputScope, true));
+    assert.equal(invalid.status, 500);
+    assert.doesNotMatch(await invalid.text(), /private-invalid-ticket|stack/);
   });
 
   void it("serves the authenticated overview contract and rejects unauthenticated access", async () => {

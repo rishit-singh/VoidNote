@@ -391,22 +391,20 @@ export function useTranscriptCorrections(noteId: string, runId: string) {
     reviewConflict,
     owned,
     workspaceId,
-    preview: (params: URLSearchParams) =>
-      runtime.queryClient.fetchQuery(
-        runtime.trpc.transcripts.targets.queryOptions(
-          {
-            ...input,
-            ...(params.has("speakerLabel") ? { speakerLabel: params.get("speakerLabel")! } : {}),
-            ...(params.has("startSeconds")
-              ? { startSeconds: Number(params.get("startSeconds")) }
-              : {}),
-            ...(params.has("endSeconds") ? { endSeconds: Number(params.get("endSeconds")) } : {}),
-            ...(params.has("includeManual")
-              ? { includeManual: params.get("includeManual") === "true" }
-              : {}),
-          },
-          { staleTime: 0, trpc: { abortOnUnmount: true } },
-        ),
+    previewOptions: (params: URLSearchParams) =>
+      runtime.trpc.transcripts.targets.queryOptions(
+        {
+          ...input,
+          ...(params.has("speakerLabel") ? { speakerLabel: params.get("speakerLabel")! } : {}),
+          ...(params.has("startSeconds")
+            ? { startSeconds: Number(params.get("startSeconds")) }
+            : {}),
+          ...(params.has("endSeconds") ? { endSeconds: Number(params.get("endSeconds")) } : {}),
+          ...(params.has("includeManual")
+            ? { includeManual: params.get("includeManual") === "true" }
+            : {}),
+        },
+        { staleTime: 0, trpc: { abortOnUnmount: true } },
       ),
   };
 }

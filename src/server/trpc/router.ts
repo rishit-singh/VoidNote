@@ -7,10 +7,25 @@ import {
   savedSummarySchema,
   summaryAcceptedSchema,
   summaryEvidenceSchema,
+  summaryHistoryInputSchema,
+  summaryHistorySchema,
+  summaryOverviewInputSchema,
+  summaryOverviewSchema,
 } from "@/contracts/analysis";
 import { createAnalysisRepository } from "@/db/analysis";
-import { analysisPolicy, notifySummaryJob, summaryEvidence } from "@/server/analysis";
+import {
+  analysisPolicy,
+  notifySummaryJob,
+  summaryEvidence,
+  traceSummaryAcceptance,
+} from "@/server/analysis";
 import { workspaceOverviewSchema } from "@/contracts/workspace-overview";
+import {
+  selfProfileGetSchema,
+  selfProfileCreateSchema,
+  selfProfileLinkSchema,
+  selfProfileSchema,
+} from "@/contracts/self-profile";
 import {
   deleteSchema,
   historySchema,
@@ -46,8 +61,14 @@ import { withDatabase, type Database } from "@/db/client";
 import { createWorkspaceRepository } from "@/db/repository";
 import { createRecordingRepository } from "@/db/recording-repository";
 import { createTranscriptCorrectionRepository } from "@/db/transcript-correction-repository";
-import { recordingEnvironment } from "@/server/recording-api";
+import { processingEnvironment } from "@/server/recording-api";
 import { authenticatedProcedure as procedure, router } from "./init";
+import { assistantRouter } from "./assistant";
+import { connectorsRouter } from "./connectors";
+import { contactsRouter } from "./contacts";
+import { researchRouter } from "./research";
+import { researchRunsRouter } from "./research-runs";
+import { activityRouter } from "./activity";
 
 // Repositories and their database handles never escape withDatabase's lifetime.
 function repositoryScope<R>(factory: (db: Database) => R) {
@@ -82,7 +103,49 @@ const targetsInput = runScope
   );
 
 export const appRouter = router({
+  selfProfile: router({
+    get: procedure
+      .input(selfProfileGetSchema)
+      .output(selfProfileSchema)
+      .query(({ ctx, input }) =>
+        workspace((repo) => repo.getSelfProfile(ctx.principal, input.workspaceId)),
+      ),
+    create: procedure
+      .input(selfProfileCreateSchema)
+      .output(personSchema)
+      .mutation(({ ctx, input }) =>
+        workspace((repo) => repo.createSelfProfile(ctx.principal, input)),
+      ),
+    link: procedure
+      .input(selfProfileLinkSchema)
+      .output(personSchema)
+      .mutation(({ ctx, input }) =>
+        workspace((repo) => repo.linkSelfProfile(ctx.principal, input)),
+      ),
+  }),
+  connectors: connectorsRouter,
+  activity: activityRouter,
+  assistant: assistantRouter,
+  contacts: contactsRouter,
+  research: researchRouter,
+  researchRuns: researchRunsRouter,
   summaries: router({
+    overview: procedure
+      .input(summaryOverviewInputSchema)
+      .output(summaryOverviewSchema)
+      .query(({ ctx, input }) =>
+        analysis((repo) =>
+          repo.overview(ctx.principal, input.workspaceId, input.noteId, analysisPolicy() !== null),
+        ),
+      ),
+    history: procedure
+      .input(summaryHistoryInputSchema)
+      .output(summaryHistorySchema)
+      .query(({ ctx, input }) =>
+        analysis((repo) =>
+          repo.history(ctx.principal, input.workspaceId, input.noteId, input.cursor, input.limit),
+        ),
+      ),
     evidence: procedure
       .input(scope.extend({ jobId: idSchema }))
       .output(summaryEvidenceSchema)
@@ -98,8 +161,8 @@ export const appRouter = router({
       .output(summaryAcceptedSchema)
       .mutation(async ({ ctx, input }) => {
         const policy = analysisPolicy();
-        const job = await analysis((repo) =>
-          repo.request(ctx.principal, input.workspaceId, input.command, policy),
+        const job = await traceSummaryAcceptance(input.workspaceId, input.command.commandId, () =>
+          analysis((repo) => repo.request(ctx.principal, input.workspaceId, input.command, policy)),
         );
         if (policy !== null && job.status === "queued") {
           notifySummaryJob(input.workspaceId, job.id);
@@ -246,9 +309,7 @@ export const appRouter = router({
       .output(processingRunSchema)
       .mutation(({ ctx, input }) =>
         recording(async (repo) => {
-          const env = recordingEnvironment();
-          if (!env.PYANNOTE_API_KEY || !env.RECORDING_CAPABILITY_SECRET)
-            throw new Error("Configure the finalized transcription provider.");
+          const env = processingEnvironment();
           const run = await repo.requestProcessing(
             ctx.principal,
             input.workspaceId,
@@ -270,7 +331,7 @@ export const appRouter = router({
         const { runs } = await repo.overview(ctx.principal, input.workspaceId, input.noteId);
         const run = runs.find((item) => item.id === input.runId);
         if (!run) throw new WorkspaceError("not_found", "Run not found.");
-        const binding = recordingEnvironment().PROCESS_RECORDING;
+        const binding = processingEnvironment().PROCESS_RECORDING;
         const result = await binding.createBatch({
           instances: [
             { id: run.id, params: { workspaceId: input.workspaceId, runId: input.runId } },

@@ -77,7 +77,7 @@ export function RecordingSettings() {
   }, []);
   return (
     <FieldGroup>
-      <p role="status" aria-live="polite">
+      <p className="m-0 text-sm text-vn-muted" role="status" aria-live="polite">
         {persistenceStatus === "hydrating"
           ? "Loading saved recording preferences…"
           : persistenceStatus === "error"
@@ -88,7 +88,7 @@ export function RecordingSettings() {
                 ? "Recording preferences saved on this device."
                 : "Using browser defaults; changes are saved on this device."}
       </p>
-      <Field data-disabled={busy}>
+      <Field className="gap-2" data-disabled={busy}>
         <FieldLabel htmlFor="recording-microphone">Microphone</FieldLabel>
         <Select
           value={settings.deviceId}
@@ -117,7 +117,7 @@ export function RecordingSettings() {
             </SelectGroup>
           </SelectContent>
         </Select>
-        <FieldDescription>
+        <FieldDescription className="max-w-[64ch]">
           {deviceError ||
             "Microphone names become available after permission is granted. Selection applies to the next recording."}
         </FieldDescription>
@@ -134,7 +134,7 @@ export function RecordingSettings() {
             </Button>
           )}
       </Field>
-      <Field orientation="horizontal" data-disabled={!speechSupported}>
+      <Field className="gap-4 py-1" orientation="horizontal" data-disabled={!speechSupported}>
         <FieldContent>
           <FieldLabel htmlFor="recording-live-text">Browser live text</FieldLabel>
           <FieldDescription>
@@ -152,7 +152,7 @@ export function RecordingSettings() {
           }}
         />
       </Field>
-      <Field orientation="horizontal">
+      <Field className="gap-4 py-1" orientation="horizontal">
         <FieldContent>
           <FieldLabel htmlFor="recording-waveform">Microphone waveform</FieldLabel>
           <FieldDescription>

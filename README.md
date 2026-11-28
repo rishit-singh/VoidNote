@@ -51,7 +51,8 @@ Automatic classification and sharing are not implemented.
 - Node.js 24 (see `.node-version`)
 - Bun 1.4.0
 - Current Chromium-based browser with microphone access, IndexedDB and Web Locks
-- Internet for authentication and server saves; microphone capture uses local storage
+- Docker Desktop or OrbStack for local Supabase Auth, Postgres and email capture
+- Internet for initial installation and optional live transcription/AI
 
 ---
 
@@ -61,26 +62,30 @@ Automatic classification and sharing are not implemented.
 git clone https://github.com/rishit-singh/voidnote.git
 cd voidnote
 bun install --frozen-lockfile
-cp .env.example .env
-# use .env.local for private values; set provider keys and local Supabase/Auth
-# settings there. DATABASE_URL is used for migrations, not Worker runtime.
+bun run dev:setup
 ```
 
-For authenticated saved notes, configure Supabase email sign-in and the local
-callback URLs in `supabase/config.toml`. Run migrations with
-`bun --env-file=.env.local run db:migrate`. For the Workers preview, copy
-`.dev.vars.example` to `.dev.vars`; see [saved notes and people](docs/2026-11-13-02-saved-notes-and-people.md)
-for database and preview setup.
+Start Docker first. Setup starts local Supabase, applies Drizzle migrations and
+creates `.dev.vars.development` with local auth settings. Existing data and
+configuration are preserved. See [local development](docs/local-development.md)
+for configuration, persistence and optional real-provider setup.
 
 ---
 
 ### Run
 
 ```bash
-bun run dev
+bun run dev:local
 ```
 
-Navigate to [`http://localhost:3000`](http://localhost:3000)
+Open **http://localhost:8787**, request an email sign-in link, then open it from
+**http://localhost:54324** (Mailpit) in the same browser. This uses real local
+Supabase authentication.
+
+`dev:local` builds and runs the complete app in Cloudflare's local Worker runtime.
+Use `dev:preview` to restart an unchanged build. Stop the app with Ctrl+C and stop
+Supabase with `dev:stop`; data is retained. The existing `dev` command is for
+Next-only UI iteration and does not run the background Workflow bindings.
 
 ### Checks and Cloudflare preview
 
@@ -96,11 +101,16 @@ bunx --no-install playwright install chromium
 bun run test:e2e
 ```
 
-`test:e2e` starts the built app in local Cloudflare `workerd`, not `next dev`. To
-use that preview manually after building, run `bun run preview:worker --env production`.
+`test:e2e` starts its own built app in local Cloudflare `workerd`, not `next dev`.
+For authenticated manual development, use `dev:local` as described above.
 
-See [saved notes and people](docs/2026-11-13-02-saved-notes-and-people.md) to configure
-Supabase email sign-in and Postgres. Notes and person profiles use server storage.
+For offline Summary evaluation, run `bun run eval:summary --list` or
+`bun run eval:summary artifact.json`. See the
+[frozen quality baseline](docs/experiments/summary-quality-offline/README.md)
+for artifact formats and human review. These commands do not call a model.
+
+See [local development](docs/local-development.md) to configure Supabase email
+sign-in and Postgres. Notes and person profiles use server storage.
 Prototype import, string-label correction and chat endpoints have been retired;
 they are not supported compatibility paths. Current speaker correction uses stable
 person and utterance identities with revision-checked commands.

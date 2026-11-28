@@ -7,15 +7,37 @@ import {
   summaryExecutionName,
   summaryWorkflowParamsSchema,
 } from "../../src/ai/summary/dispatch";
-import { summaryModel } from "./summary-model.fixture";
+import { wrapLanguageModel } from "ai";
+import { summaryBinding } from "./summary-model.fixture";
 
 export { SummaryWorkflow } from "../../src/ai/summary/workflow";
 
 // Keep production admission, policy, submission hooks, and Workflow untouched.
-// Only model resolution is replaced by a deterministic AI SDK V4 provider.
+// The real Workers AI adapter consumes a deterministic local binding response.
 export class SummaryAgent extends ProductionSummaryAgent {
-  override resolveModel() {
-    return summaryModel();
+  private fixtureRequest: unknown;
+
+  override getAIBinding(): Ai {
+    return this.observeSummaryAIBinding(summaryBinding(() => this.fixtureRequest));
+  }
+
+  override resolveModel(model?: ThinkModel) {
+    if (model && typeof model !== "string") return model;
+    const resolved = super.resolveModel(model);
+    if (typeof resolved === "string") throw new Error("Unresolved fixture model");
+    return wrapLanguageModel({
+      model: resolved,
+      middleware: {
+        wrapStream: async ({ params, doStream }) => {
+          this.fixtureRequest = {
+            tools: params.tools,
+            toolChoice: params.toolChoice,
+            prompt: params.prompt,
+          };
+          return doStream();
+        },
+      },
+    });
   }
 
   async inspectFixture(): Promise<string> {
@@ -66,6 +88,10 @@ export default {
           headers: { "content-type": "application/json" },
         });
       }
+      if (url.pathname === "/reconcile-usage") {
+        await agent.reconcileSummaryUsage();
+        return Response.json({ reconciled: true });
+      }
       if (url.pathname === "/inspect") {
         const instance = await env.SUMMARY_WORKFLOW.get(workflowId);
         const inspection: unknown = JSON.parse(await agent.inspectFixture());
@@ -83,3 +109,4 @@ export default {
     }
   },
 } satisfies ExportedHandler<FixtureEnvironment>;
+import type { ThinkModel } from "@cloudflare/think";

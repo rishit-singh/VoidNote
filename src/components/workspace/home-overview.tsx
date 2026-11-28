@@ -82,7 +82,7 @@ export function RecentRecordings({ overview }: { overview: OverviewQuery }) {
     <section aria-labelledby="recent-recordings-title" className="flex min-w-0 flex-col gap-4">
       <h2
         id="recent-recordings-title"
-        className="m-0 flex min-h-9 items-center text-[14px] font-medium leading-5 text-vn-text"
+        className="sticky top-[var(--workspace-header-height)] z-10 m-0 flex min-h-9 items-center bg-vn-page pb-4 text-[14px] font-medium leading-5 text-vn-text"
       >
         Recently recorded
       </h2>

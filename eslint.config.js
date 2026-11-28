@@ -17,6 +17,10 @@ const qualityFiles = [
   "src/{contracts,server,db,stores}/notes{.ts,/**/*.ts}",
   "src/{contracts,server,db,stores}/people{.ts,/**/*.ts}",
   "src/server/trpc/http.ts",
+  "src/server/trpc/{assistant,research}.ts",
+  "src/server/{assistant,research}.ts",
+  "src/{contracts,db}/{assistant,inference,research,conversation-summaries}/**/*.ts",
+  "src/db/{assistant,inference,research,conversation-summary}-schema.ts",
   "src/app/api/[[]procedure]/route.ts",
   "src/lib/{query-runtime,workspace-api}.ts",
   "src/hooks/{use-note-autosave,use-workspace-queries,use-transcript-corrections}.ts",
@@ -65,6 +69,21 @@ export default defineConfig(
       "no-restricted-imports": ["error", { patterns: [domainImports] }],
     },
   },
+  // Pick the owning program for test/tool files instead of loading every
+  // overlapping application/Worker program during typed linting.
+  ...[
+    {
+      files: ["scripts/*.ts", "{drizzle,open-next,playwright,vite}.config.ts"],
+      project: "./tsconfig.tools.json",
+    },
+    { files: ["tests/db/**/*.ts"], project: "./tsconfig.db-tests.json" },
+    { files: ["tests/auth/**/*.ts"], project: "./tsconfig.auth-tests.json" },
+    { files: ["tests/worker/**/*.ts"], project: "./tsconfig.worker-tests.json" },
+    { files: ["tests/e2e/**/*.ts"], project: "./tests/e2e/tsconfig.json" },
+  ].map(({ files, project }) => ({
+    files,
+    languageOptions: { parserOptions: { project: [project] } },
+  })),
   {
     files: [
       "src/{components,hooks,stores,queries,lib}/**/*.{ts,tsx}",
@@ -171,6 +190,26 @@ export default defineConfig(
       "@stylistic/padding-line-between-statements": [
         "error",
         { blankLine: "always", prev: "*", next: "return" },
+        { blankLine: "always", prev: "*", next: ["function", "class", "interface", "type"] },
+        { blankLine: "always", prev: ["function", "class", "interface", "type"], next: "*" },
+        { blankLine: "always", prev: "block-like", next: "*" },
+      ],
+    },
+  },
+  {
+    files: [
+      "src/ai/{assistant,inference,research,conversation-summaries}/**/*.ts",
+      "src/ai/assistant-services.ts",
+      "src/{contracts,db}/{assistant,inference,research,conversation-summaries}/**/*.ts",
+      "src/config/{assistant,research,conversation-summary}.ts",
+      "src/server/{assistant,research}.ts",
+      "src/server/trpc/{assistant,research}.ts",
+    ],
+    rules: {
+      "@stylistic/padding-line-between-statements": [
+        "error",
+        { blankLine: "always", prev: ["const", "let", "var"], next: "*" },
+        { blankLine: "always", prev: "*", next: ["if", "for", "while", "switch", "try", "return"] },
         { blankLine: "always", prev: "*", next: ["function", "class", "interface", "type"] },
         { blankLine: "always", prev: ["function", "class", "interface", "type"], next: "*" },
         { blankLine: "always", prev: "block-like", next: "*" },

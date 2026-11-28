@@ -5,6 +5,8 @@ import { z } from "zod";
 import { AuthError } from "@/auth/server";
 import { WorkspaceError } from "@/contracts/workspace";
 import type { TRPCContext } from "./context";
+import { notifyApplicationEvents } from "@/server/activity";
+import { traceOperation } from "@/telemetry/operations";
 
 function domainError(error: unknown): TRPCError {
   const cause = error instanceof TRPCError ? error.cause : error;
@@ -15,6 +17,7 @@ function domainError(error: unknown): TRPCError {
       conflict: "CONFLICT",
       command_reused: "CONFLICT",
       invalid_cursor: "BAD_REQUEST",
+      service_unavailable: "SERVICE_UNAVAILABLE",
     } as const;
     return new TRPCError({ code: code[cause.code], message: cause.message, cause });
   }
@@ -62,22 +65,25 @@ const t = initTRPC.context<TRPCContext>().create({
 });
 
 export const router = t.router;
-export const authenticatedProcedure = t.procedure.use(async ({ ctx, type, next }) => {
-  try {
-    if (type === "mutation") {
-      const origin = ctx.request.headers.get("origin");
-      if (
-        (origin && origin !== new URL(ctx.request.url).origin) ||
-        ctx.request.headers.get("sec-fetch-site") === "cross-site"
-      ) {
-        throw new AuthError("forbidden", "Cross-origin writes are not allowed.", 403);
+export const authenticatedProcedure = t.procedure.use(({ ctx, type, path, next }) =>
+  traceOperation(`trpc.${path}`, async () => {
+    try {
+      if (type === "mutation") {
+        const origin = ctx.request.headers.get("origin");
+        if (
+          (origin && origin !== new URL(ctx.request.url).origin) ||
+          ctx.request.headers.get("sec-fetch-site") === "cross-site"
+        ) {
+          throw new AuthError("forbidden", "Cross-origin writes are not allowed.", 403);
+        }
       }
+      const principal = await ctx.getPrincipal();
+      const result = await next({ ctx: { principal } });
+      if (!result.ok) throw result.error;
+      if (type === "mutation" && !path.startsWith("activity.")) notifyApplicationEvents();
+      return result;
+    } catch (error) {
+      throw domainError(error);
     }
-    const principal = await ctx.getPrincipal();
-    const result = await next({ ctx: { principal } });
-    if (!result.ok) throw result.error;
-    return result;
-  } catch (error) {
-    throw domainError(error);
-  }
-});
+  }),
+);

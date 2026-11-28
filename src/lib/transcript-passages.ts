@@ -26,19 +26,16 @@ export function groupTranscriptPassages(
   let texts: string[] = [];
   for (const turn of turns) {
     const effectiveIdentity = identity(turn);
-    const gap = previous ? turn.startSeconds - previous.endSeconds : -1;
     if (
       passage &&
       previous &&
       previous.runId === turn.runId &&
       previous.recordingId === turn.recordingId &&
-      previousIdentity === effectiveIdentity &&
-      gap >= 0 &&
-      gap <= 1
+      previousIdentity === effectiveIdentity
     ) {
       passage.turnIds.push(turn.id);
       passage.turns.push(turn);
-      passage.endSeconds = turn.endSeconds;
+      passage.endSeconds = Math.max(passage.endSeconds, turn.endSeconds);
       texts.push(turn.text.trim());
     } else {
       if (passage) passage.text = texts.join(" ");

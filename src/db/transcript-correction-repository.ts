@@ -14,6 +14,7 @@ import {
 import { idSchema, WorkspaceError, type Principal } from "../contracts/workspace";
 import { groupTranscriptPassages } from "../lib/transcript-passages";
 import type { Database } from "./repository";
+import { appendApplicationEvent } from "./activity";
 import {
   notes,
   people,
@@ -434,7 +435,10 @@ export function createTranscriptCorrectionRepository(db: Database) {
       noteId: string,
       runId: string,
       cursor?: string,
+      limit = 100,
     ) {
+      const pageSize = z.number().int().min(1).max(100).parse(limit);
+
       return db.transaction(async (tx) => {
         await authorize(tx, principal, workspaceId, noteId);
         const { run } = await lockRun(tx, workspaceId, noteId, runId);
@@ -451,11 +455,11 @@ export function createTranscriptCorrectionRepository(db: Database) {
               ? sql`(${segments.sequence}, ${segments.orderKey}, ${segments.id}) > (${after.sequence}, ${after.orderKey}, ${after.id}::uuid)`
               : undefined,
           ),
-          101,
+          pageSize + 1,
         );
         let bytes = 0;
         const page: typeof rows = [];
-        for (const row of rows.slice(0, 100)) {
+        for (const row of rows.slice(0, pageSize)) {
           const size = row.textBytes + 4096;
           if (page.length && bytes + size > MAX_PAGE_BYTES) break;
           bytes += size;
@@ -1015,13 +1019,25 @@ export function createTranscriptCorrectionRepository(db: Database) {
           );
         // Advance once per committed command, independently of its segment count.
         // Exact receipt replays return above; lazy materialization is unchanged source.
-        await tx
+        const [advancedRun] = await tx
           .update(processingRuns)
           .set({ transcriptGeneration: sql`${processingRuns.transcriptGeneration} + 1` })
-          .where(and(eq(processingRuns.workspaceId, workspaceId), eq(processingRuns.id, runId)));
+          .where(and(eq(processingRuns.workspaceId, workspaceId), eq(processingRuns.id, runId)))
+          .returning({ generation: processingRuns.transcriptGeneration });
         await tx
           .insert(transcriptCorrectionOutbox)
           .values({ workspaceId, correctionId: saved!.id });
+        await appendApplicationEvent(tx, {
+          id: saved!.id,
+          workspaceId,
+          type: "transcript.corrected",
+          actorId: principal.id,
+          executor: "user",
+          operationId: input.commandId,
+          noteId,
+          runId,
+          generation: advancedRun!.generation,
+        });
         return correctionResult(tx, workspaceId, runId, recording.id, saved!);
       });
     },

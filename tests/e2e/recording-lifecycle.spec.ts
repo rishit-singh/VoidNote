@@ -186,6 +186,38 @@ test("capture survives navigation, pauses, resumes, drains final audio and reloa
   );
 });
 
+test("mobile capture controls remain reachable across navigation, pause, stop and reload", async ({
+  page,
+  workspace,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const note = workspace.seedNote({ title: "Mobile capture" });
+  await installMicrophone(page);
+  await page.goto(`/notes/${note.id}`);
+  await page.getByRole("button", { name: "Record", exact: true }).click();
+  await expect.poll(async () => (await manifests(page))[0]?.chunkCount ?? 0).toBeGreaterThan(0);
+  const navigation = page.getByRole("navigation", { name: "Mobile workspace navigation" });
+  await navigation.getByRole("link", { name: "Settings", exact: true }).click();
+  for (const name of ["Pause recording", "Resume recording", "Stop recording"]) {
+    const control = page.getByRole("button", { name, exact: true });
+    await expect(control).toBeInViewport();
+    const bounds = await control.boundingBox();
+    const navBounds = await navigation.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(navBounds).not.toBeNull();
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(navBounds!.y);
+    await control.click();
+  }
+  await expect.poll(async () => (await manifests(page))[0]?.status).toBe("finalized");
+  expect((await manifests(page))[0]?.noteId).toBe(note.id);
+  await page.goto(`/notes/${note.id}`);
+  await page.reload();
+  await expect(page.getByRole("link", { name: "Download audio", exact: true })).toHaveAttribute(
+    "href",
+    /^blob:/,
+  );
+});
+
 test("cancelling a pending session commit never waits for an unstarted recorder", async ({
   page,
   workspace,

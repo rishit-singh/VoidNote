@@ -1,0 +1,6 @@
+# Keep Wrangler/Miniflare's developer endpoints off the public tunnel.
+# Use this project config rather than an unrelated ~/.cloudflared/config.yml.
+ingress:
+  - path: ^/(cdn-cgi(/.*)?|__scheduled(/.*)?)$
+    service: http_status:404
+  - service: http://127.0.0.1:8787

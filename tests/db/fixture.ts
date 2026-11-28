@@ -7,6 +7,7 @@ import postgres from "postgres";
 import { createWorkspaceRepository } from "../../src/db/repository";
 import * as schema from "../../src/db/schema";
 import type { Principal, SaveNote, SavePerson } from "../../src/contracts/workspace";
+import { platformTables } from "./platform-tables";
 
 // Deliberately never read DATABASE_URL or load an application's .env file.
 const url = process.env.TEST_DATABASE_URL;
@@ -22,7 +23,12 @@ if (!/(^|[_-])test($|[_-])/.test(databaseName)) {
   );
 }
 
-export const sql = postgres(url, { max: 12, prepare: false, connect_timeout: 5 });
+export const sql = postgres(url, {
+  max: 12,
+  prepare: false,
+  connect_timeout: 5,
+  onnotice: () => {},
+});
 export const db = drizzle(sql, { schema });
 export const repository = createWorkspaceRepository(db);
 const migrationsSchema = `test_migrations_${randomUUID().replaceAll("-", "")}`;
@@ -44,7 +50,13 @@ export async function setupDatabase() {
     0,
     "refusing to migrate a nonempty database; provision a fresh dedicated test DB",
   );
+  const [authSchema] = await sql`select 1 from pg_namespace where nspname = 'auth'`;
+  assert.equal(authSchema, undefined, "refusing to own an existing auth schema");
   ownsTables = true;
+  // Vanilla PostgreSQL has no Supabase Auth. This minimal test-owned identity
+  // table is created only after the empty database and namespace ownership checks.
+  await sql`create schema auth`;
+  await sql`create table auth.users (id uuid primary key)`;
   await migrate(db, {
     migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)),
     migrationsSchema,
@@ -56,6 +68,9 @@ export async function teardownDatabase() {
     if (ownsTables) {
       // Only objects created after the empty-database check are ours to remove.
       for (const table of [
+        ...platformTables,
+        "summary_inference_reservations",
+        "summary_inference_budgets",
         "note_summaries",
         "analysis_jobs",
         "transcript_correction_outbox",
@@ -79,6 +94,8 @@ export async function teardownDatabase() {
         await sql`drop table if exists ${sql(`public.${table}`)}`;
       }
       await sql`drop schema if exists ${sql(migrationsSchema)} cascade`;
+      await sql`drop table if exists auth.users`;
+      await sql`drop schema if exists auth`;
     }
   } finally {
     if (lock) {
@@ -91,8 +108,14 @@ export async function teardownDatabase() {
 
 export async function workspace() {
   const principal: Principal = { id: randomUUID(), email: `test-${randomUUID()}@example.invalid` };
+  await seedAuthIdentity(principal.id);
   const record = await repository.ensureWorkspace(principal);
   return { principal, workspaceId: record.id };
+}
+
+/** Explicitly stand in for an identity already verified/created by Supabase Auth. */
+export async function seedAuthIdentity(id: string) {
+  await sql`insert into auth.users (id) values (${id})`;
 }
 
 export function note(overrides: Partial<SaveNote> = {}): SaveNote {

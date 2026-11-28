@@ -25,6 +25,8 @@ import { cn } from "@/lib/utils";
 import { RecordingController, RecordingDock } from "@/components/recording";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { useRecentNotes } from "@/hooks/use-recent-notes";
+import { ActivityCenter } from "@/components/activity/ActivityCenter";
+import { Toaster } from "@/components/ui/sonner";
 
 const navigation = [
   { href: "/", label: "Home", icon: HomeIcon },
@@ -33,6 +35,7 @@ const navigation = [
 ] as const;
 
 function activeSection(path: string) {
+  if (path.startsWith("/my-profile")) return "/my-profile";
   if (path.startsWith("/profiles")) return "/profiles";
   if (path.startsWith("/settings")) return "/settings";
   return "/";
@@ -65,6 +68,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   const [signingOut, setSigningOut] = useState(false);
 
   const recentNotes = useRecentNotes();
+  const selfProfileHref = "/my-profile";
 
   function startNewNote() {
     const created = createNote();
@@ -157,11 +161,18 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
     >
       <div
         inert={signingOut}
-        className="flex h-dvh min-h-dvh w-full overflow-hidden bg-vn-page font-mono text-body text-vn-text [&_:is(a,button,input,textarea):focus-visible]:outline [&_:is(a,button,input,textarea):focus-visible]:outline-2 [&_:is(a,button,input,textarea):focus-visible]:outline-offset-[3px] [&_:is(a,button,input,textarea):focus-visible]:outline-vn-secondary motion-reduce:[&_*]:!scroll-auto motion-reduce:[&_*]:![transition-duration:0.01ms] motion-reduce:[&_*::before]:!scroll-auto motion-reduce:[&_*::before]:![transition-duration:0.01ms] motion-reduce:[&_*::after]:!scroll-auto motion-reduce:[&_*::after]:![transition-duration:0.01ms] [@media(max-width:760px)]:flex-col [@media(max-width:760px)]:overflow-auto"
+        className="flex h-dvh min-h-dvh w-full overflow-hidden bg-vn-page font-mono text-body text-vn-text [--workspace-header-height:104px] [&_:is(a,button,input,textarea):focus-visible]:outline [&_:is(a,button,input,textarea):focus-visible]:outline-2 [&_:is(a,button,input,textarea):focus-visible]:outline-offset-[3px] [&_:is(a,button,input,textarea):focus-visible]:outline-vn-secondary motion-reduce:[&_*]:!scroll-auto motion-reduce:[&_*]:![transition-duration:0.01ms] motion-reduce:[&_*::before]:!scroll-auto motion-reduce:[&_*::before]:![transition-duration:0.01ms] motion-reduce:[&_*::after]:!scroll-auto motion-reduce:[&_*::after]:![transition-duration:0.01ms] [@media(max-width:760px)]:flex-col [@media(max-width:760px)]:[--workspace-header-height:90px]"
       >
+        {session && (
+          <ActivityCenter
+            key={`${session.user.id}:${session.workspace.id}`}
+            userId={session.user.id}
+            workspaceId={session.workspace.id}
+          />
+        )}
         <RecordingController noteId={noteId ?? undefined} />
         <aside
-          className="flex min-h-dvh flex-[0_0_224px] flex-col gap-6 border-r border-vn-divider bg-vn-sidebar px-4 pb-5 pt-7 [@media(max-width:760px)]:hidden"
+          className="flex h-full min-h-0 min-w-0 flex-[0_0_224px] flex-col gap-8 overflow-y-auto border-r border-vn-divider bg-vn-sidebar px-4 py-9 [&>*]:shrink-0 [@media(max-width:760px)]:hidden"
           aria-label="Primary navigation"
         >
           <Link
@@ -190,9 +201,9 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
                 href={href}
                 className={cn(
                   "flex h-[38px] items-center gap-3 rounded-[3px] px-3.5 text-label text-vn-muted transition-[background-color,color] duration-150 [transition-timing-function:ease] hover:bg-vn-hover hover:text-vn-text",
-                  selectedSection === href && "bg-vn-hover text-vn-text",
+                  selectedSection === href && !noteId && "bg-vn-hover text-vn-text",
                 )}
-                aria-current={selectedSection === href ? "page" : undefined}
+                aria-current={selectedSection === href && !noteId ? "page" : undefined}
               >
                 <Icon className="size-4 flex-none stroke-[1.5]" aria-hidden="true" />
                 {label}
@@ -201,14 +212,16 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
           </nav>
           {pathname !== "/" && (
             <div className="flex flex-col gap-0.5">
-              <p className="mb-1.5 mt-0 px-3.5 pb-2 text-meta font-medium uppercase tracking-wider text-vn-muted">
-                Notes
-              </p>
+              <p className="m-0 px-3.5 pb-3 text-meta text-vn-muted">Notes</p>
               {recentNotes.map((item) => (
                 <Link
                   key={item.id}
                   href={`/notes/${encodeURIComponent(item.id)}`}
-                  className="block truncate rounded-[3px] px-3.5 py-2.5 text-meta text-vn-secondary hover:bg-vn-hover hover:text-vn-text"
+                  className={cn(
+                    "block truncate rounded-[3px] px-3.5 py-3 text-meta text-vn-muted hover:bg-vn-hover hover:text-vn-text",
+                    noteId === item.id && "bg-vn-hover text-vn-text",
+                  )}
+                  aria-current={noteId === item.id ? "page" : undefined}
                 >
                   {item.title || "Untitled note"}
                   {edits[`note:${item.id}`]?.dirty && <span aria-label="Unsaved changes"> ·</span>}
@@ -217,6 +230,13 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
             </div>
           )}
           <div className="mt-auto flex flex-col gap-2 border-t border-vn-stroke px-2 pt-3.5">
+            <Link
+              href={selfProfileHref}
+              aria-current={selectedSection === "/my-profile" ? "page" : undefined}
+              className="px-1.5 py-2 text-label text-vn-muted"
+            >
+              My profile
+            </Link>
             <span className="truncate text-[11px] text-vn-muted" title={session?.user.email ?? ""}>
               {session?.user.email}
             </span>
@@ -232,16 +252,21 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
           </div>
         </aside>
         <main
-          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto [@media(max-width:760px)]:pb-[calc(62px+env(safe-area-inset-bottom))]"
+          className={cn(
+            "flex min-h-0 min-w-0 flex-1 flex-col overflow-auto [@media(max-width:760px)]:mb-[calc(62px+env(safe-area-inset-bottom))]",
+            selectedSection === "/profiles" && "min-[1101px]:overflow-hidden",
+          )}
           id="main-content"
           aria-label={
-            pathname.startsWith("/notes/")
-              ? "Note editor"
-              : selectedSection === "/profiles"
-                ? "Profiles"
-                : selectedSection === "/settings"
-                  ? "Settings"
-                  : "Notes"
+            pathname.startsWith("/my-profile")
+              ? "My profile"
+              : pathname.startsWith("/notes/")
+                ? "Note editor"
+                : selectedSection === "/profiles"
+                  ? "Profiles"
+                  : selectedSection === "/settings"
+                    ? "Settings"
+                    : "Notes"
           }
         >
           {recoveryError && (
@@ -293,8 +318,17 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
               <span>{label}</span>
             </Link>
           ))}
+          <Link
+            href={selfProfileHref}
+            aria-current={selectedSection === "/my-profile" ? "page" : undefined}
+            className="flex min-h-11 min-w-16 flex-col items-center justify-center gap-0.5 text-[10px] text-vn-muted"
+          >
+            <PersonIcon className="size-[17px]" aria-hidden="true" />
+            <span>My profile</span>
+          </Link>
         </nav>
       </div>
+      {session && <Toaster />}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>

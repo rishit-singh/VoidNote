@@ -35,20 +35,21 @@ const turn = (
 });
 
 void describe("transcript passages", () => {
-  void it("groups by effective identity with inclusive one-second gaps without changing edit targets", () => {
+  void it("groups consecutive turns by effective identity without changing edit targets", () => {
     const person = {
       assignment: { kind: "person", personId: "p" },
       assignmentSource: "manual",
     } as const;
     const unknown = { assignment: { kind: "unknown" }, assignmentSource: "manual" } as const;
-    const turns = [
-      turn("a", 0, 1),
-      turn("b", 2, 3),
+    const firstPage = [turn("a", 0, 1)];
+    const secondPage = [
+      turn("b", 20, 21),
       turn("c", 3, 4, person),
       turn("d", 4, 5, { ...person, speakerLabel: "B" }),
       turn("e", 5, 6, unknown),
       turn("f", 6, 7, { ...unknown, speakerLabel: "C" }),
     ];
+    const turns = [...firstPage, ...secondPage];
     const original = structuredClone(turns);
     const groups = groupTranscriptPassages(turns);
     assert.deepEqual(
@@ -64,7 +65,7 @@ void describe("transcript passages", () => {
       turnIds: ["a", "b"],
       turns: [turns[0], turns[1]],
       startSeconds: 0,
-      endSeconds: 3,
+      endSeconds: 21,
       text: "a b",
     });
     assert.equal(groups[0].turns[0], turns[0]);
@@ -72,20 +73,47 @@ void describe("transcript passages", () => {
     assert.deepEqual(groupTranscriptPassages([]), []);
   });
 
-  void it("breaks on intervening speakers, overlaps, long gaps, backwards time, and run boundaries", () => {
+  void it("splits at intervening identities and run or recording boundaries but retains pauses and overlaps", () => {
     const turns = [
       turn("a", 0, 1),
-      turn("b", 1, 2, { speakerLabel: "B" }),
-      turn("c", 2, 4),
-      turn("d", 3, 5),
-      turn("e", 6.01, 7),
-      turn("f", 1, 2),
-      turn("g", 2, 3, { runId: "another-run" }),
-      turn("h", 3, 4, { runId: "another-run", recordingId: "another-recording" }),
+      turn("b", 30, 31),
+      turn("c", 30, 31, {
+        assignment: { kind: "person", personId: "same-person" },
+        speakerLabel: "PROVIDER_A",
+      }),
+      turn("d", 29, 93, {
+        assignment: { kind: "person", personId: "same-person" },
+        speakerLabel: "PROVIDER_B",
+      }),
+      turn("e", 90, 92, {
+        assignment: { kind: "person", personId: "same-person" },
+        speakerLabel: "PROVIDER_B",
+      }),
+      turn("f", 91, 94, { speakerLabel: "B" }),
+      turn("g", 95, 96, {
+        assignment: { kind: "person", personId: "same-person" },
+        speakerLabel: "PROVIDER_C",
+      }),
+      turn("h", 97, 98, {
+        assignment: { kind: "person", personId: "same-person" },
+        speakerLabel: "PROVIDER_D",
+        runId: "another-run",
+      }),
+      turn("i", 98, 99, {
+        assignment: { kind: "person", personId: "same-person" },
+        runId: "another-run",
+        recordingId: "another-recording",
+      }),
     ];
+    const groups = groupTranscriptPassages(turns);
     assert.deepEqual(
-      groupTranscriptPassages(turns).map((group) => group.turnIds),
-      turns.map((item) => [item.id]),
+      groups.map((group) => group.turnIds),
+      [["a", "b"], ["c", "d", "e"], ["f"], ["g"], ["h"], ["i"]],
     );
+    const samePersonPassage = groups[1];
+    assert.ok(samePersonPassage);
+    assert.equal(samePersonPassage.startSeconds, 30);
+    assert.equal(samePersonPassage.endSeconds, 93);
+    assert.equal(samePersonPassage.text, "c d e");
   });
 });

@@ -27,6 +27,16 @@ type DispatchOperations = {
   failed(params: SummaryWorkflowParams): void;
 };
 
+type MaintenanceOperations = DispatchOperations & {
+  pendingDispatch(limit: number): Promise<readonly SummaryWorkflowParams[]>;
+  pendingCancellationCleanup(limit: number): Promise<readonly SummaryWorkflowParams[]>;
+  cancel(params: SummaryWorkflowParams): Promise<void>;
+  cancellationCleaned(params: SummaryWorkflowParams): Promise<void>;
+  cancellationFailed(params: SummaryWorkflowParams): void;
+};
+
+const MAINTENANCE_BATCH_SIZE = 10;
+
 // Active jobs remain eligible after acknowledgement so each pass also repairs
 // terminal Workflow/DB divergence. A successful confirmation rotates the job's
 // check timestamp; failed reconciliation is retried without acknowledging it.
@@ -53,20 +63,58 @@ export async function dispatchSummaryJobs(
   }
 }
 
-export async function dispatchSummaryOutbox(
-  env: Pick<SummaryEnvironment, "SUMMARY_ENABLED" | "SUMMARY_AGENT" | "HYPERDRIVE">,
+export async function dispatchSummaryMaintenance(
+  enabled: boolean,
+  operations: MaintenanceOperations,
 ): Promise<void> {
-  if (env.SUMMARY_ENABLED !== "true") {
+  const cancelled = await operations.pendingCancellationCleanup(MAINTENANCE_BATCH_SIZE);
+
+  for (const params of cancelled) {
+    try {
+      await operations.cancel(params);
+      await operations.cancellationCleaned(params);
+    } catch {
+      operations.cancellationFailed(params);
+    }
+  }
+
+  // Disabling inference never disables recovery of already accepted cleanup.
+  if (!enabled) {
     return;
   }
 
+  const pending = await operations.pendingDispatch(MAINTENANCE_BATCH_SIZE);
+  await dispatchSummaryJobs(pending, operations);
+}
+
+export async function dispatchSummaryOutbox(
+  env: Pick<SummaryEnvironment, "SUMMARY_ENABLED" | "SUMMARY_AGENT" | "HYPERDRIVE">,
+): Promise<void> {
   const [{ getAgentByName }, { withAnalysisDatabase }] = await Promise.all([
     import("agents"),
     import("../jobs"),
   ]);
-  const pending = await withAnalysisDatabase(env, (repo) => repo.pendingDispatch(10));
 
-  await dispatchSummaryJobs(pending, {
+  await dispatchSummaryMaintenance(env.SUMMARY_ENABLED === "true", {
+    pendingCancellationCleanup(limit) {
+      return withAnalysisDatabase(env, (repo) => repo.pendingCancellationCleanup(limit));
+    },
+    async cancel(params) {
+      const agent = await getAgentByName(env.SUMMARY_AGENT, summaryAgentName(params));
+
+      // Do not use the best-effort notification helper: its swallowed failure
+      // is not evidence that the durable cleanup request can be acknowledged.
+      await agent.cancelSummary(params);
+    },
+    async cancellationCleaned({ workspaceId, jobId }) {
+      await withAnalysisDatabase(env, (repo) => repo.cancellationCleaned(workspaceId, jobId));
+    },
+    cancellationFailed({ workspaceId, jobId }) {
+      console.error("summary.cancel.cleanup_retry", { workspaceId, jobId });
+    },
+    pendingDispatch(limit) {
+      return withAnalysisDatabase(env, (repo) => repo.pendingDispatch(limit));
+    },
     async start(params) {
       const agent = await getAgentByName(env.SUMMARY_AGENT, summaryAgentName(params));
 

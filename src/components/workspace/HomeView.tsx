@@ -45,10 +45,10 @@ export function HomeView() {
 
   return (
     <section
-      className="mx-auto flex w-full min-w-0 max-w-[1100px] flex-[1_0_auto] flex-col gap-8 px-6 pb-10 pt-10 sm:px-10 [@media(max-width:760px)]:gap-6 [@media(max-width:760px)]:px-6 [@media(max-width:760px)]:pb-8 [@media(max-width:760px)]:pt-[30px]"
+      className="mx-auto flex w-full min-w-0 max-w-[880px] flex-[1_0_auto] flex-col gap-8 px-6 pb-10 sm:px-10 [@media(max-width:760px)]:gap-6 [@media(max-width:760px)]:px-6 [@media(max-width:760px)]:pb-8"
       aria-labelledby="home-title"
     >
-      <div className="flex min-h-11 items-center justify-between gap-4">
+      <header className="sticky top-0 z-20 -mb-3 flex h-[var(--workspace-header-height)] flex-none items-center justify-between gap-4 bg-vn-page pb-5 pt-10 [@media(max-width:760px)]:pb-4 [@media(max-width:760px)]:pt-[30px]">
         <h1
           id="home-title"
           className="m-0 text-title text-vn-text [@media(max-width:760px)]:text-[24px]"
@@ -67,33 +67,35 @@ export function HomeView() {
         >
           + New note
         </Button>
-      </div>
+      </header>
       <HomeMetrics overview={overview} />
       <div className="grid min-w-0 grid-cols-1 items-start gap-8 min-[1100px]:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)] min-[1100px]:gap-10">
         <section aria-labelledby="notes-title" className="flex min-w-0 flex-col gap-4">
-          <h2
-            id="notes-title"
-            className="m-0 flex min-h-9 items-center text-[16px] font-medium leading-6 text-vn-text"
-          >
-            Notes
-          </h2>
-          <div className="flex h-[46px] flex-none items-center gap-3 rounded-[4px] border border-vn-stroke px-3.5">
-            <MagnifyingGlassIcon
-              className="size-4 flex-none fill-none stroke-vn-muted stroke-[1.2]"
-              aria-hidden="true"
-            />
-            <label className="sr-only" htmlFor="note-search">
-              Search notes
-            </label>
-            <Input
-              variant="search"
-              id="note-search"
-              type="search"
-              maxLength={200}
-              placeholder="Search notes"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+          <div className="sticky top-[var(--workspace-header-height)] z-10 flex flex-col gap-4 bg-vn-page pb-4">
+            <h2
+              id="notes-title"
+              className="m-0 flex min-h-9 items-center text-[16px] font-medium leading-6 text-vn-text"
+            >
+              Notes
+            </h2>
+            <div className="flex h-[46px] flex-none items-center gap-3 rounded-[4px] border border-vn-stroke px-3.5">
+              <MagnifyingGlassIcon
+                className="size-4 flex-none fill-none stroke-vn-muted stroke-[1.2]"
+                aria-hidden="true"
+              />
+              <label className="sr-only" htmlFor="note-search">
+                Search notes
+              </label>
+              <Input
+                variant="search"
+                id="note-search"
+                type="search"
+                maxLength={200}
+                placeholder="Search notes"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
           </div>
           {notesLoading && visibleNotes.length === 0 && (
             <div className="flex flex-col" role="status" aria-label="Loading notes">

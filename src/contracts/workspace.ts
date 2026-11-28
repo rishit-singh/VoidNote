@@ -58,7 +58,13 @@ export type ListQuery = z.infer<typeof listQuerySchema>;
 export type Session = z.infer<typeof sessionSchema>;
 
 export class WorkspaceError extends Error {
-  readonly code: "forbidden" | "not_found" | "conflict" | "command_reused" | "invalid_cursor";
+  readonly code:
+    | "forbidden"
+    | "not_found"
+    | "conflict"
+    | "command_reused"
+    | "invalid_cursor"
+    | "service_unavailable";
   readonly currentRevision: number | undefined;
   readonly affectedTargets: string[] | undefined;
   constructor(

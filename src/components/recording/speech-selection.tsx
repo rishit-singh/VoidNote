@@ -122,6 +122,7 @@ export function SpeechSelection({
       </Button>
       <SpeakerAssignment
         disabled={!valid}
+        allowPropagation={false}
         turn={turn}
         api={api}
         onSaved={onSaved}

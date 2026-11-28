@@ -1,7 +1,13 @@
 import { Buffer } from "node:buffer";
-import { and, asc, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
+import {
+  selfProfileCreateSchema,
+  selfProfileLinkSchema,
+  type SelfProfileCreate,
+  type SelfProfileLink,
+} from "../contracts/self-profile";
 import { RECENT_RECORDINGS_LIMIT, workspaceOverviewSchema } from "../contracts/workspace-overview";
 import {
   PERSON_DESCRIPTION_PREVIEW_LENGTH,
@@ -29,6 +35,7 @@ import {
   type Session,
 } from "../contracts/workspace";
 import type * as schema from "./schema";
+import { appendApplicationEvent } from "./activity";
 import {
   commandReceipts,
   DEFAULT_BRANCH,
@@ -223,6 +230,29 @@ async function readPerson(tx: Transaction, workspaceId: string, id: string) {
   return row ? recordDates(row) : undefined;
 }
 
+async function readSelfProfile(tx: Transaction, workspaceId: string, accountId: string) {
+  const [row] = await tx
+    .select(personColumns)
+    .from(people)
+    .where(
+      and(
+        eq(people.workspaceId, workspaceId),
+        eq(people.accountId, accountId),
+        isNull(people.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ? recordDates(row) : null;
+}
+
+async function lockSelfProfile(tx: Transaction, workspaceId: string, accountId: string) {
+  // A transaction-scoped key also serializes the absent-self case. It never
+  // upgrades the membership/workspace lifecycle locks held by authorization.
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`self-profile:${workspaceId}:${accountId}`}, 0))`,
+  );
+}
+
 export function createWorkspaceRepository(db: Database) {
   async function read<T>(
     principal: Principal,
@@ -240,7 +270,7 @@ export function createWorkspaceRepository(db: Database) {
     workspaceId: string,
     entityType: EntityType,
     operation: string,
-    input: DeleteCommand | SaveNote | SavePerson,
+    input: DeleteCommand | SaveNote | SavePerson | SelfProfileCreate | SelfProfileLink,
     resultSchema: z.ZodType<T>,
     work: (tx: Transaction) => Promise<{ result: T; changed: boolean }>,
   ): Promise<T> {
@@ -315,6 +345,15 @@ export function createWorkspaceRepository(db: Database) {
             eventId,
             kind: `${entityType}.${operation === "delete" ? "delete" : "changed"}`,
           });
+          await appendApplicationEvent(tx, {
+            id: eventId,
+            workspaceId,
+            type: entityType === "note" ? "note.changed" : "profile.changed",
+            actorId: principal.id,
+            executor: "user",
+            operationId: input.commandId,
+            ...(entityType === "note" ? { noteId: result.id } : { personId: result.id }),
+          });
         }
         return result;
       },
@@ -351,6 +390,22 @@ export function createWorkspaceRepository(db: Database) {
             target: [workspaceMemberships.workspaceId, workspaceMemberships.userId],
           });
         await authorize(tx, principal, workspace.id);
+        await lockSelfProfile(tx, workspace.id, principal.id);
+        const [existingPerson] = await tx
+          .select({ id: people.id })
+          .from(people)
+          .where(and(eq(people.workspaceId, workspace.id), isNull(people.deletedAt)))
+          .limit(1);
+        if (!existingPerson) {
+          await tx.insert(people).values({
+            workspaceId: workspace.id,
+            id: crypto.randomUUID(),
+            accountId: principal.id,
+            displayName: "Me",
+            description: "",
+            revision: 1,
+          });
+        }
         return workspace;
       });
     },
@@ -460,6 +515,47 @@ export function createWorkspaceRepository(db: Database) {
       });
     },
 
+    async readNoteTranscriptPage(
+      principal: Principal,
+      workspaceId: string,
+      id: string,
+      offset: number,
+      length: number,
+    ) {
+      const input = z
+        .object({
+          offset: z.number().int().min(0).max(500_000),
+          length: z.number().int().min(1).max(12_000),
+        })
+        .parse({ offset, length });
+
+      return read(principal, workspaceId, async (tx) => {
+        const [row] = await tx
+          .select({
+            id: notes.id,
+            title: notes.title,
+            revision: notes.revision,
+            text: sql<string>`substring(${notes.transcript} from ${input.offset + 1}::integer for ${input.length}::integer)`,
+            totalCharacters: sql<number>`char_length(${notes.transcript})`.mapWith(Number),
+          })
+          .from(notes)
+          .where(
+            and(
+              eq(notes.workspaceId, workspaceId),
+              eq(notes.id, idSchema.parse(id)),
+              isNull(notes.deletedAt),
+            ),
+          )
+          .limit(1);
+
+        if (!row) {
+          throw new WorkspaceError("not_found", "Note not found");
+        }
+
+        return row;
+      });
+    },
+
     async saveNote(
       principal: Principal,
       workspaceId: string,
@@ -553,6 +649,108 @@ export function createWorkspaceRepository(db: Database) {
       });
     },
 
+    async getSelfProfile(principal: Principal, workspaceId: string): Promise<PersonRecord | null> {
+      return read(principal, workspaceId, (tx) => readSelfProfile(tx, workspaceId, principal.id));
+    },
+
+    async createSelfProfile(principal: Principal, value: SelfProfileCreate): Promise<PersonRecord> {
+      const input = selfProfileCreateSchema.parse(value);
+      return command(
+        principal,
+        input.workspaceId,
+        "person",
+        "self-create",
+        input,
+        personSchema,
+        async (tx) => {
+          await lockSelfProfile(tx, input.workspaceId, principal.id);
+          const current = await readSelfProfile(tx, input.workspaceId, principal.id);
+          if (current) {
+            throw new WorkspaceError(
+              "conflict",
+              "Your self profile is already linked",
+              current.revision,
+            );
+          }
+          const [row] = await tx
+            .insert(people)
+            .values({
+              workspaceId: input.workspaceId,
+              id: crypto.randomUUID(),
+              accountId: principal.id,
+              displayName: input.displayName,
+              description: "",
+              revision: 1,
+            })
+            .returning(personColumns);
+          return { result: recordDates(row!), changed: true };
+        },
+      );
+    },
+
+    async linkSelfProfile(principal: Principal, value: SelfProfileLink): Promise<PersonRecord> {
+      const input = selfProfileLinkSchema.parse(value);
+      return command(
+        principal,
+        input.workspaceId,
+        "person",
+        "self-link",
+        input,
+        personSchema,
+        async (tx) => {
+          await lockSelfProfile(tx, input.workspaceId, principal.id);
+          const current = await readSelfProfile(tx, input.workspaceId, principal.id);
+          if ((current?.id ?? null) !== input.expectedSelfId) {
+            throw new WorkspaceError("conflict", "Your self profile link has changed");
+          }
+          // Match summary/transcript profile locking: acquiring the target first
+          // can deadlock with a reader holding the former profile's share lock.
+          const lockedProfiles = await tx
+            .select({ ...personColumns, accountId: people.accountId })
+            .from(people)
+            .where(
+              and(
+                eq(people.workspaceId, input.workspaceId),
+                inArray(people.id, current ? [current.id, input.personId] : [input.personId]),
+              ),
+            )
+            .orderBy(asc(people.id))
+            .for("update");
+          const target = lockedProfiles.find((profile) => profile.id === input.personId);
+          if (!target || target.deletedAt) {
+            throw new WorkspaceError("not_found", "Person not found");
+          }
+          if (target.revision !== input.expectedRevision) {
+            throw new WorkspaceError("conflict", "The record has changed", target.revision);
+          }
+          if (target.accountId !== null && target.accountId !== principal.id) {
+            throw new WorkspaceError("conflict", "This profile is linked to another account");
+          }
+          if (current?.id === target.id) {
+            return { result: personSchema.parse(recordDates(target)), changed: false };
+          }
+          if (current) {
+            // Account links are private identity metadata, not person content.
+            // Keep the old profile and all recording references intact.
+            await tx
+              .update(people)
+              .set({ accountId: null })
+              .where(and(eq(people.workspaceId, input.workspaceId), eq(people.id, current.id)));
+          }
+          const [row] = await tx
+            .update(people)
+            .set({
+              accountId: principal.id,
+              revision: target.revision + 1,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(people.workspaceId, input.workspaceId), eq(people.id, target.id)))
+            .returning(personColumns);
+          return { result: recordDates(row!), changed: true };
+        },
+      );
+    },
+
     async savePerson(
       principal: Principal,
       workspaceId: string,
@@ -593,6 +791,17 @@ export function createWorkspaceRepository(db: Database) {
         input,
         personSchema,
         async (tx) => {
+          const [person] = await tx
+            .select({ accountId: people.accountId })
+            .from(people)
+            .where(and(eq(people.workspaceId, workspaceId), eq(people.id, input.id)))
+            .for("update");
+          if (person?.accountId) {
+            throw new WorkspaceError(
+              "conflict",
+              "This profile is linked to an account. Link another profile before deleting it.",
+            );
+          }
           const now = new Date();
           const [row] = await tx
             .update(people)

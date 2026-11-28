@@ -307,21 +307,26 @@ function ScopedTranscriptEditor({ noteId, runId, onSeek }: Props) {
                 api={api}
                 onAssign={
                   editing.turns && editing.turns.length > 1
-                    ? (assignment, guest, options) =>
+                    ? (assignment, guest, options, targets) =>
                         api.submit(
                           {
                             kind: "assign",
                             commandId: crypto.randomUUID(),
-                            targets: editing.turns!.map((segment) => ({
-                              id: segment.id,
-                              expectedAttributionRevision: segment.attributionRevision,
-                            })),
+                            targets: targets!,
                             assignment,
                           },
                           guest,
                           options,
                         )
                     : undefined
+                }
+                passageTargets={editing.turns?.map((segment) => ({
+                  id: segment.id,
+                  expectedAttributionRevision: segment.attributionRevision,
+                }))}
+                allowPropagation={
+                  !editing.turns ||
+                  new Set(editing.turns.map((segment) => segment.speakerLabel)).size === 1
                 }
                 onSaved={saved}
               />

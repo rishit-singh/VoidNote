@@ -1,13 +1,33 @@
-import type { ChatRecoveryOptions, ThinkSubmissionInspection, TurnConfig } from "@cloudflare/think";
+import type {
+  ChatRecoveryOptions,
+  StepContext,
+  ThinkSubmissionInspection,
+  TurnConfig,
+  TurnContext,
+} from "@cloudflare/think";
 import { Think } from "@cloudflare/think";
+import { wrapLanguageModel } from "ai";
 
 import { WorkspaceError } from "../../contracts/workspace";
-import type { SummaryPolicy } from "../runtime";
-import { summaryPolicySchema } from "../runtime";
+import { emitSummaryUsage, summaryTrace } from "../../telemetry/summary";
+import { requestInferenceStreamUsage } from "../inference";
+import type { SummaryPolicy, SummaryUsage } from "../runtime";
+import { summaryInputTokenBound, summaryPolicySchema } from "../runtime";
 import type { SummaryWorkflowParams } from "./dispatch";
 import { summaryAgentName, summaryExecutionName, summaryWorkflowParamsSchema } from "./dispatch";
-import { summaryInstructions } from "./instructions";
-import { failSummary, getSummaryExecution } from "./service";
+import {
+  classifySummaryFailure,
+  classifyThinkSubmissionError,
+  summaryFailureMessage,
+} from "./failure";
+import { resolveSummaryPrompt } from "./instructions";
+import {
+  failSummary,
+  getSummaryExecution,
+  reserveSummaryInference,
+  settleSummaryInference,
+} from "./service";
+import { observeSummaryUsage } from "./usage";
 
 // The SDK constrains Env to Cloudflare.Env. Use the generated environment
 // directly so its namespace/workflow types do not form a second recursive alias.
@@ -24,6 +44,11 @@ type SummaryState = {
   inferenceStarted: boolean;
   inferenceUncertain: boolean;
   cancelled: boolean;
+  // Optional so existing durable state remains readable. Missing usage retains
+  // the hold; a complete provider receipt is persisted before settlement I/O.
+  pendingUsage?: SummaryUsage | null;
+  // Retained after settlement so terminal diagnosis survives usage receipt cleanup.
+  failureEvidence?: ReturnType<typeof classifySummaryFailure> | null;
 };
 
 const interruptedMessage =
@@ -48,11 +73,37 @@ export class SummaryAgent extends Think<SummaryEnvironment, SummaryState> {
     return this.#scope().policy.model;
   }
 
-  override getSystemPrompt(): string {
-    return summaryInstructions;
+  override getAIBinding(): Ai {
+    return this.observeSummaryAIBinding(super.getAIBinding());
   }
 
-  override async beforeTurn(): Promise<TurnConfig> {
+  protected observeSummaryAIBinding(binding: Ai): Ai {
+    return observeSummaryUsage(requestInferenceStreamUsage(binding), async (usage) => {
+      if (!this.#scope().policy.budgetId) {
+        return;
+      }
+
+      // Persist only authoritative raw provider counts. The observer finalizes
+      // streams before SDK completion; recovery never needs response content.
+      this.setState({
+        ...this.state,
+        pendingUsage: usage,
+        failureEvidence: {
+          ...this.state.failureEvidence,
+          kind: this.state.failureEvidence?.kind ?? "provider",
+          confidence: "provider",
+          usage: { ...this.state.failureEvidence?.usage, ...usage },
+        },
+      });
+      await this.schedule(60, "reconcileSummaryUsage");
+    });
+  }
+
+  override getSystemPrompt(): string {
+    return resolveSummaryPrompt(this.#scope().policy.promptVersion).system;
+  }
+
+  override async beforeTurn(context: TurnContext): Promise<TurnConfig> {
     const scope = this.#scope();
     const execution = await getSummaryExecution(this.env, scope.workspaceId, scope.jobId);
     this.#assertPinnedScope({ ...scope, policy: summaryPolicySchema.parse(execution.policy) });
@@ -69,24 +120,196 @@ export class SummaryAgent extends Think<SummaryEnvironment, SummaryState> {
       throw new Error(interruptedMessage);
     }
 
-    // Commit before returning control to the SDK/provider. Even an unexpected
-    // replay of admission cannot silently issue another paid model turn.
-    this.setState({ ...this.state, inferenceStarted: true });
+    const model = context.model;
+    if (typeof model === "string") {
+      throw new Error("Summary model must resolve before admission.");
+    }
 
     return {
-      instructions: summaryInstructions,
+      model: wrapLanguageModel({
+        model,
+        middleware: {
+          transformParams: async ({ params }) => {
+            // Runs after Think adds the final-answer instruction/schema and the
+            // SDK filters tools. Count the actual request, not just the transcript.
+            await this.#reserveInference(
+              scope.policy.budgetAccounting ? summaryInputTokenBound(params) : undefined,
+            );
+
+            return params;
+          },
+        },
+      }),
+      instructions: resolveSummaryPrompt(scope.policy.promptVersion).system,
       activeTools: [],
       maxSteps: scope.policy.maxSteps,
       maxOutputTokens: scope.policy.maxOutputTokens,
       maxRetries: 0,
       timeout: scope.policy.timeoutMs,
       sendReasoning: false,
+      ...(scope.policy.reasoningEffort
+        ? { providerOptions: { "workers-ai": { reasoning_effort: scope.policy.reasoningEffort } } }
+        : {}),
     };
+  }
+
+  async #reserveInference(inputTokenBound?: number): Promise<void> {
+    const scope = this.#scope();
+    if (
+      this.state.inferenceStarted ||
+      this.state.cancelled ||
+      this.env.SUMMARY_ENABLED !== "true"
+    ) {
+      throw new Error(interruptedMessage);
+    }
+
+    try {
+      await summaryTrace(this.env, scope, "agent.reserve", () =>
+        reserveSummaryInference(
+          this.env,
+          scope.workspaceId,
+          scope.jobId,
+          scope.policy,
+          inputTokenBound,
+        ),
+      );
+    } catch (error) {
+      await failSummary(
+        this.env,
+        scope.workspaceId,
+        scope.jobId,
+        "blocked",
+        error instanceof WorkspaceError
+          ? error.message
+          : "Summary inference allowance is unavailable or already reserved. No new model request was sent.",
+      );
+      throw error;
+    }
+
+    if (this.state.cancelled) {
+      throw new Error("Summary execution was cancelled after reserving its allowance.");
+    }
+
+    // Commit before returning control to the SDK/provider. Even an unexpected
+    // replay of admission cannot silently issue another paid model turn.
+    this.setState({ ...this.state, inferenceStarted: true });
+  }
+
+  override async onStepEnd(context: StepContext): Promise<void> {
+    const scope = this.#scope();
+    const finishReason =
+      typeof context.finishReason === "string" && context.finishReason !== "error"
+        ? context.finishReason
+        : undefined;
+    const cachedInputTokens: unknown = context.usage.inputTokenDetails.cacheReadTokens;
+    const reasoningTokens: unknown = context.usage.outputTokenDetails.reasoningTokens;
+    const knownUsage = {
+      ...(typeof context.usage.inputTokens === "number"
+        ? { inputTokens: context.usage.inputTokens }
+        : {}),
+      ...(typeof context.usage.outputTokens === "number"
+        ? { outputTokens: context.usage.outputTokens }
+        : {}),
+      ...(typeof cachedInputTokens === "number" ? { cachedInputTokens } : {}),
+      ...(typeof reasoningTokens === "number" ? { reasoningTokens } : {}),
+    };
+    if (finishReason || Object.keys(knownUsage).length > 0) {
+      const evidence = classifySummaryFailure({
+        finishReason,
+        outputTokenLimit: this.#scope().policy.maxOutputTokens,
+        ...(finishReason !== undefined && finishReason !== "tool-calls"
+          ? { finalAnswerPresent: false }
+          : {}),
+        usage: { ...this.state.failureEvidence?.usage, ...knownUsage },
+      });
+      this.setState({ ...this.state, failureEvidence: evidence });
+    }
+
+    // SDK usage may contain adapter-synthesized zeros for absent provider fields.
+    // Only the raw binding observer is allowed to create an accounting receipt.
+    await this.#settleUsage();
+    await super.onStepEnd(context);
+    await emitSummaryUsage(
+      this.env,
+      { ...scope, workflowId: summaryExecutionName(scope) },
+      {
+        model: scope.policy.model,
+        ...(finishReason ? { finishReason } : {}),
+        ...(typeof cachedInputTokens === "number" ? { cachedInputTokens } : {}),
+        ...(typeof reasoningTokens === "number" ? { reasoningTokens } : {}),
+        responseTimeMs: context.performance.responseTimeMs,
+        stepTimeMs: context.performance.stepTimeMs,
+        ...(context.performance.timeToFirstOutputMs !== undefined
+          ? { timeToFirstOutputMs: context.performance.timeToFirstOutputMs }
+          : {}),
+        ...(context.usage.inputTokens !== undefined
+          ? { inputTokens: context.usage.inputTokens }
+          : {}),
+        ...(context.usage.outputTokens !== undefined
+          ? { outputTokens: context.usage.outputTokens }
+          : {}),
+      },
+    );
+  }
+
+  async reconcileSummaryUsage(): Promise<void> {
+    if (!(await this.#settleUsage())) {
+      await this.schedule(60, "reconcileSummaryUsage");
+    }
+  }
+
+  /** Internal Workflow RPC: return only a user-safe diagnosis from durable evidence. */
+  diagnoseSummaryFailure(error: unknown): string {
+    const scope = this.#scope();
+    const evidence = this.state.failureEvidence;
+    const errorKind = classifyThinkSubmissionError(error);
+    const diagnosis = classifySummaryFailure({
+      ...(evidence?.finishReason ? { finishReason: evidence.finishReason } : {}),
+      outputTokenLimit: scope.policy.maxOutputTokens,
+      ...(errorKind === "missing_final_answer" ? { finalAnswerPresent: false } : {}),
+      interrupted: errorKind === "interrupted",
+      schemaFailure: errorKind === "schema" || evidence?.kind === "schema",
+      usage: evidence?.usage,
+    });
+
+    this.setState({ ...this.state, failureEvidence: diagnosis });
+
+    return summaryFailureMessage(diagnosis);
+  }
+
+  async #settleUsage(): Promise<boolean> {
+    const usage = this.state.pendingUsage;
+    if (!usage) {
+      return true;
+    }
+
+    const scope = this.#scope();
+    try {
+      await settleSummaryInference(this.env, scope.workspaceId, scope.jobId, usage);
+      this.setState({ ...this.state, pendingUsage: null });
+
+      return true;
+    } catch {
+      // Retain the original hold until settlement succeeds. Never log usage
+      // payloads or database errors, and never re-enter inference from recovery.
+      return false;
+    }
   }
 
   // Native DO RPC only. The Worker never exposes this namespace through the
   // general Agent HTTP/WebSocket router, and this method is not @callable.
   async startSummary(input: SummaryWorkflowParams): Promise<string | null> {
+    const scope = this.#params(input);
+
+    return summaryTrace(
+      this.env,
+      { ...scope, workflowId: summaryExecutionName(scope) },
+      "agent.start",
+      () => this.#startSummary(scope),
+    );
+  }
+
+  async #startSummary(input: SummaryWorkflowParams): Promise<string | null> {
     const params = this.#params(input);
     if (this.env.SUMMARY_ENABLED !== "true") {
       throw new Error("Summary execution is disabled.");
@@ -230,13 +453,34 @@ export class SummaryAgent extends Think<SummaryEnvironment, SummaryState> {
       submission.status === "aborted" ||
       submission.status === "skipped"
     ) {
+      const evidence = this.state.failureEvidence;
+      const errorKind = classifyThinkSubmissionError(submission.error);
+      const finalAnswerAbsent =
+        submission.status === "error" ||
+        errorKind === "missing_final_answer" ||
+        evidence?.kind === "output_limit" ||
+        evidence?.kind === "missing_final_answer";
+      const diagnosed = classifySummaryFailure({
+        ...(evidence?.finishReason ? { finishReason: evidence.finishReason } : {}),
+        outputTokenLimit: scope.policy.maxOutputTokens,
+        ...(finalAnswerAbsent ? { finalAnswerPresent: false } : {}),
+        interrupted:
+          errorKind === "interrupted" ||
+          (errorKind === undefined && evidence === undefined && this.state.inferenceStarted),
+        schemaFailure: errorKind === "schema" || evidence?.kind === "schema",
+        providerFailure: errorKind === "provider" || evidence?.kind === "provider",
+        usage: evidence?.usage,
+      });
+      this.setState({ ...this.state, failureEvidence: diagnosed });
       await failSummary(
         this.env,
         scope.workspaceId,
         scope.jobId,
         "failed",
         this.state.inferenceStarted
-          ? interruptedMessage
+          ? diagnosed
+            ? summaryFailureMessage(diagnosed)
+            : interruptedMessage
           : "Summary submission did not complete. No summary was published.",
       );
     }

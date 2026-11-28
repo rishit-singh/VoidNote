@@ -1,0 +1,55 @@
+{
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "voidnote-platform-acceptance-20261125",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "dev": { "ip": "127.0.0.1", "port": 8797 },
+  "vars": {
+    "SUMMARY_ENABLED": "false",
+    "ASSISTANT_ENABLED": "false",
+    "RESEARCH_ENABLED": "false",
+    "SUMMARY_MODEL": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+    "ASSISTANT_MODEL": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+    "RESEARCH_MODEL": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+  },
+  "ai": { "binding": "AI", "remote": true },
+  "durable_objects": {
+    "bindings": [
+      { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
+      { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
+    ],
+  },
+  "migrations": [
+    { "tag": "platform-proof-v1", "new_sqlite_classes": ["SummaryAgent", "AssistantAgent"] },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "RECORDING_ARTIFACTS",
+      "bucket_name": "voidnote-platform-proof-local",
+      "remote": false,
+    },
+  ],
+  "workflows": [
+    {
+      "binding": "SUMMARY_WORKFLOW",
+      "name": "voidnote-platform-summary",
+      "class_name": "SummaryWorkflow",
+    },
+    {
+      "binding": "RESEARCH_WORKFLOW",
+      "name": "voidnote-platform-research",
+      "class_name": "ResearchWorkflow",
+    },
+  ],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:54322/voidnote_platform_acceptance_20261125",
+      "remote": false,
+    },
+  ],
+}

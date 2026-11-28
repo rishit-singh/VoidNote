@@ -19,13 +19,21 @@ function traceEndpoint(baseUrl: string | undefined): string | undefined {
   }
 }
 
-// Export only our two explicit smoke spans. Framework/Worker instrumentation can
-// contain URLs, queries, binding values and exception messages; none are exported.
-const sanitizeSpans: PostProcessorFn = (spans) =>
-  spans.flatMap((span) => {
+// Export explicit application spans only. Never export framework URL/query,
+// binding values, request bodies, tool payloads or exception messages.
+const sanitizeSpans: PostProcessorFn = (spans) => {
+  const sanitized = spans.flatMap((span) => {
     const operation = span.attributes["voidnote.operation"];
-    if (operation !== "GET /api/health" && operation !== "check health") return [];
+    if (
+      typeof operation !== "string" ||
+      (operation !== "GET /api/health" &&
+        operation !== "check health" &&
+        !/^(?:trpc|worker)\.[a-zA-Z][a-zA-Z0-9_.-]{0,100}$/.test(operation))
+    ) {
+      return [];
+    }
     const requestId = span.attributes["request.id"];
+    const statusCode = span.attributes["http.response.status_code"];
     const { traceId, spanId, traceFlags } = span.spanContext();
     return [
       {
@@ -33,6 +41,12 @@ const sanitizeSpans: PostProcessorFn = (spans) =>
         name: operation,
         attributes: {
           ...(typeof requestId === "string" ? { "request.id": requestId } : {}),
+          ...(typeof statusCode === "number" &&
+          Number.isInteger(statusCode) &&
+          statusCode >= 100 &&
+          statusCode <= 599
+            ? { "http.response.status_code": statusCode }
+            : {}),
         },
         status: { code: span.status.code },
         events: [],
@@ -42,6 +56,15 @@ const sanitizeSpans: PostProcessorFn = (spans) =>
       },
     ];
   });
+  const retainedIds = new Set(sanitized.map((span) => span.spanContext().spanId));
+  for (const span of sanitized) {
+    if (span.parentSpanContext && !retainedIds.has(span.parentSpanContext.spanId)) {
+      delete span.parentSpanContext;
+      Reflect.deleteProperty(span, "parentSpanId");
+    }
+  }
+  return sanitized;
+};
 
 function configuration(env: unknown): TraceConfig {
   const token = readString(env, "LOGFIRE_TOKEN")?.trim();
@@ -64,8 +87,7 @@ function configuration(env: unknown): TraceConfig {
           },
     sampling: {
       tailSampler: ({ spans }) =>
-        enabled &&
-        spans.some((span) => span.attributes["voidnote.operation"] === "GET /api/health"),
+        enabled && spans.some((span) => typeof span.attributes["voidnote.operation"] === "string"),
     },
     instrumentation: { instrumentGlobalFetch: false, instrumentGlobalCache: false },
     handlers: { fetch: { acceptTraceContext: false } },

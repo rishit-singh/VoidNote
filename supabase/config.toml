@@ -1,9 +1,44 @@
-project_id = "VoidNote"
+project_id = "voidnote-dev"
+
+[api]
+port = 54321
+
+[db]
+port = 54322
+major_version = 17
+
+# Drizzle owns application migrations; Supabase owns its auth/system schemas.
+[db.seed]
+enabled = false
+
+[studio]
+port = 54323
+
+[local_smtp]
+port = 54324
 
 [auth]
-site_url = "https://voidnote-production.rsrishitsingh.workers.dev"
+# scripts/dev-local.ts derives these from .dev.vars.development APP_URL,
+# defaulting to localhost before the variables file has been created.
+site_url = "env(VOIDNOTE_AUTH_SITE_URL)"
 additional_redirect_urls = [
-  "https://voidnote-production.rsrishitsingh.workers.dev/auth/callback",
+  "env(VOIDNOTE_AUTH_CALLBACK_URL)",
   "http://localhost:3000/auth/callback",
-  "http://localhost:8787/auth/callback",
 ]
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+
+# VoidNote uses R2 and Workers for these responsibilities.
+[storage]
+enabled = false
+
+[realtime]
+enabled = false
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false

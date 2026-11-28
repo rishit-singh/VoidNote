@@ -1,0 +1,1 @@
+export { ContactResearchPanel } from "./ContactResearchPanel";

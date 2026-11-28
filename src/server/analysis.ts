@@ -4,16 +4,23 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 import type { ContextReference } from "../ai/context";
 import { readSummarySnapshot } from "../ai/context";
-import { summaryPolicy } from "../ai/runtime";
+import { readSummaryPolicy } from "../config/summary";
+import { summaryTrace } from "../telemetry/summary";
 
 export function analysisPolicy() {
   const { env } = getCloudflareContext();
 
-  if (env.SUMMARY_ENABLED !== "true" || !env.SUMMARY_MODEL) {
-    return null;
-  }
+  return readSummaryPolicy(env);
+}
 
-  return summaryPolicy(env.SUMMARY_MODEL);
+export function traceSummaryAcceptance<T>(
+  workspaceId: string,
+  commandId: string,
+  work: () => T | Promise<T>,
+) {
+  const { env } = getCloudflareContext();
+
+  return summaryTrace(env, { workspaceId, jobId: commandId }, "request.accept", work);
 }
 
 // Binding RPC keeps Think/Workflows runtime imports out of the Next route bundle.

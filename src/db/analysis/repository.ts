@@ -19,9 +19,12 @@ import {
   savedSummarySchema,
   type SummaryAnalysis,
   summaryAnalysisSchema,
+  type SummaryHistory,
+  type SummaryOverview,
   type TranscriptVersion,
 } from "../../contracts/analysis";
 import { idSchema, type Principal, WorkspaceError } from "../../contracts/workspace";
+import { appendApplicationEvent } from "../activity";
 import type { Database } from "../repository";
 import {
   analysisJobs,
@@ -35,6 +38,7 @@ import {
   workspaceMemberships,
   workspaces,
 } from "../schema";
+import { summaryCancellationCleanup } from "../summary-cleanup-schema";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -318,6 +322,20 @@ async function terminal(
     .where(jobScope(job.workspaceId, job.id))
     .returning();
 
+  if (status === "failed" || status === "blocked") {
+    await appendApplicationEvent(tx, {
+      id: randomUUID(),
+      workspaceId: job.workspaceId,
+      type: "summary.failed",
+      actorId: job.actorId,
+      executor: "workflow",
+      operationId: job.id,
+      noteId: job.noteId,
+      runId: job.runId,
+      generation: job.source.generation,
+    });
+  }
+
   return updated!;
 }
 
@@ -540,11 +558,155 @@ async function contextFor(tx: Transaction, locked: LockedJob): Promise<SummaryCo
 
 export function createAnalysisRepository(db: Database) {
   return {
+    async overview(
+      principal: Principal,
+      workspaceId: string,
+      noteId: string,
+      canGenerate: boolean,
+    ): Promise<SummaryOverview> {
+      return db.transaction(async (tx) => {
+        const denied = await membershipError(tx, principal, workspaceId);
+        if (denied) {
+          throw denied;
+        }
+
+        const note = await lockNote(tx, workspaceId, noteId);
+        if (!note || note.deletedAt) {
+          throw new WorkspaceError("not_found", "Note is unavailable.");
+        }
+
+        const [job] = await tx
+          .select()
+          .from(analysisJobs)
+          .where(and(eq(analysisJobs.workspaceId, workspaceId), eq(analysisJobs.noteId, noteId)))
+          .orderBy(desc(analysisJobs.createdAt), desc(analysisJobs.id))
+          .limit(1);
+        const [summary] = await tx
+          .select({ jobId: noteSummaries.jobId })
+          .from(noteSummaries)
+          .where(and(eq(noteSummaries.workspaceId, workspaceId), eq(noteSummaries.noteId, noteId)))
+          .orderBy(desc(noteSummaries.version))
+          .limit(1);
+        const [run] = await tx
+          .select({ id: processingRuns.id })
+          .from(processingRuns)
+          .innerJoin(
+            recordings,
+            and(
+              eq(recordings.workspaceId, processingRuns.workspaceId),
+              eq(recordings.id, processingRuns.recordingId),
+              isNull(recordings.deletedAt),
+              eq(recordings.status, "ready"),
+            ),
+          )
+          .where(
+            and(
+              eq(processingRuns.workspaceId, workspaceId),
+              eq(processingRuns.noteId, noteId),
+              eq(processingRuns.status, "succeeded"),
+              sql`${processingRuns.transcriptGeneration} > 0`,
+            ),
+          )
+          .orderBy(desc(processingRuns.createdAt), asc(processingRuns.id))
+          .limit(1);
+        const available = !!run;
+        const unavailableReason = canGenerate
+          ? available
+            ? null
+            : "A finalized transcript is required."
+          : "Summary generation is disabled.";
+
+        return {
+          latestJob: job ? await jobDTO(tx, job) : null,
+          latestSummaryJobId: summary?.jobId ?? null,
+          canGenerate: canGenerate && available,
+          unavailableReason,
+        };
+      });
+    },
+
+    async history(
+      principal: Principal,
+      workspaceId: string,
+      noteId: string,
+      cursor: string | undefined,
+      limit: number,
+    ): Promise<SummaryHistory> {
+      return db.transaction(async (tx) => {
+        const denied = await membershipError(tx, principal, workspaceId);
+        if (denied) {
+          throw denied;
+        }
+
+        const note = await lockNote(tx, workspaceId, noteId);
+        if (!note || note.deletedAt) {
+          throw new WorkspaceError("not_found", "Note is unavailable.");
+        }
+
+        let beforeVersion: number | undefined;
+        if (cursor) {
+          const match = /^(\d+):([0-9a-f-]{36})$/i.exec(cursor);
+          if (!match) {
+            throw new WorkspaceError("invalid_cursor", "Invalid summary history cursor.");
+          }
+
+          beforeVersion = Number(match[1]);
+          const [cursorRow] = await tx
+            .select({ version: noteSummaries.version })
+            .from(noteSummaries)
+            .where(
+              and(
+                eq(noteSummaries.workspaceId, workspaceId),
+                eq(noteSummaries.noteId, noteId),
+                eq(noteSummaries.version, beforeVersion),
+                eq(noteSummaries.jobId, match[2]!),
+              ),
+            )
+            .limit(1);
+          if (!cursorRow) {
+            throw new WorkspaceError("invalid_cursor", "Summary history cursor is unavailable.");
+          }
+        }
+
+        const rows = await tx
+          .select({
+            jobId: noteSummaries.jobId,
+            version: noteSummaries.version,
+            createdAt: noteSummaries.createdAt,
+          })
+          .from(noteSummaries)
+          .where(
+            and(
+              eq(noteSummaries.workspaceId, workspaceId),
+              eq(noteSummaries.noteId, noteId),
+              beforeVersion === undefined
+                ? undefined
+                : sql`${noteSummaries.version} < ${beforeVersion}`,
+            ),
+          )
+          .orderBy(desc(noteSummaries.version), desc(noteSummaries.jobId))
+          .limit(limit + 1);
+        const hasMore = rows.length > limit;
+        const items = rows.slice(0, limit).map((row) => ({
+          jobId: row.jobId,
+          version: row.version,
+          createdAt: row.createdAt.toISOString(),
+        }));
+        const last = items.at(-1);
+
+        return {
+          items,
+          nextCursor: hasMore && last ? `${last.version}:${last.jobId}` : null,
+        };
+      });
+    },
+
     async request(
       principal: Principal,
       workspaceId: string,
       value: RequestSummary,
       policy: SummaryPolicy | null,
+      automaticSource?: { runId: string; generation: number },
     ): Promise<AnalysisJob> {
       const command = requestSummarySchema.parse(value);
 
@@ -607,6 +769,32 @@ export function createAnalysisRepository(db: Database) {
         const { run, available } = await lockRun(tx, workspaceId, command.noteId, candidate.id);
         if (!run || !available) {
           throw new WorkspaceError("conflict", "A finalized transcript is required.");
+        }
+
+        if (automaticSource) {
+          if (
+            run.id !== automaticSource.runId ||
+            run.transcriptGeneration !== automaticSource.generation
+          ) {
+            throw new WorkspaceError("conflict", "Automatic summary source has been superseded.");
+          }
+
+          const [accepted] = await tx
+            .select()
+            .from(analysisJobs)
+            .where(
+              and(
+                eq(analysisJobs.workspaceId, workspaceId),
+                eq(analysisJobs.noteId, command.noteId),
+                eq(analysisJobs.runId, run.id),
+                sql`${analysisJobs.source}->>'generation' = ${String(automaticSource.generation)}`,
+              ),
+            )
+            .orderBy(desc(analysisJobs.createdAt))
+            .limit(1);
+          if (accepted) {
+            return jobDTO(tx, accepted);
+          }
         }
 
         // Concurrent exact requests serialize on the note. Do not validate new
@@ -681,7 +869,17 @@ export function createAnalysisRepository(db: Database) {
         const locked = await lockJob(tx, workspaceId, jobId, principal);
         requireAvailable(locked);
 
-        return jobDTO(tx, await terminal(tx, locked.job, "cancelled", null));
+        const job = await terminal(tx, locked.job, "cancelled", null);
+        if (job.status === "cancelled") {
+          // Cancellation and its runtime cleanup request commit together. Keep
+          // completed receipts so terminal command replay cannot recreate work.
+          await tx
+            .insert(summaryCancellationCleanup)
+            .values({ workspaceId, jobId })
+            .onConflictDoNothing();
+        }
+
+        return jobDTO(tx, job);
       });
     },
 
@@ -736,6 +934,73 @@ export function createAnalysisRepository(db: Database) {
           maxContextBytes: summaryPolicySchema.parse(locked.job.policy).maxContextBytes,
         };
       });
+    },
+
+    async pendingCancellationCleanup(limit = 10) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new WorkspaceError("conflict", "Invalid summary cleanup limit.");
+      }
+
+      return db.transaction(async (tx) => {
+        const selected = await tx
+          .select({
+            workspaceId: summaryCancellationCleanup.workspaceId,
+            jobId: summaryCancellationCleanup.jobId,
+          })
+          .from(summaryCancellationCleanup)
+          .where(isNull(summaryCancellationCleanup.completedAt))
+          .orderBy(
+            sql`${summaryCancellationCleanup.checkedAt} asc nulls first`,
+            asc(summaryCancellationCleanup.createdAt),
+            asc(summaryCancellationCleanup.workspaceId),
+            asc(summaryCancellationCleanup.jobId),
+          )
+          .limit(limit)
+          .for("update", { skipLocked: true });
+
+        if (selected.length) {
+          // Rotate before external calls: failures and process loss cannot pin
+          // the first batch forever. The monotonic floor also handles clock
+          // precision ties without repeatedly selecting the same failed row.
+          await tx
+            .update(summaryCancellationCleanup)
+            .set({
+              checkedAt: sql`greatest(
+                clock_timestamp(),
+                coalesce(${summaryCancellationCleanup.checkedAt}, ${summaryCancellationCleanup.createdAt})
+                  + interval '1 millisecond'
+              )`,
+            })
+            .where(
+              or(
+                ...selected.map(({ workspaceId, jobId }) =>
+                  and(
+                    eq(summaryCancellationCleanup.workspaceId, workspaceId),
+                    eq(summaryCancellationCleanup.jobId, jobId),
+                  ),
+                ),
+              ),
+            );
+        }
+
+        return selected;
+      });
+    },
+
+    /** Acknowledge only after the exact runtime cancellation RPC has completed. */
+    async cancellationCleaned(workspaceId: string, jobId: string): Promise<void> {
+      idSchema.parse(workspaceId);
+      idSchema.parse(jobId);
+      await db
+        .update(summaryCancellationCleanup)
+        .set({ completedAt: new Date() })
+        .where(
+          and(
+            eq(summaryCancellationCleanup.workspaceId, workspaceId),
+            eq(summaryCancellationCleanup.jobId, jobId),
+            isNull(summaryCancellationCleanup.completedAt),
+          ),
+        );
     },
 
     async pendingDispatch(limit = 10) {
@@ -920,6 +1185,19 @@ export function createAnalysisRepository(db: Database) {
           .update(analysisJobs)
           .set({ status: "succeeded", error: null, updatedAt: new Date() })
           .where(jobScope(workspaceId, jobId));
+
+        await appendApplicationEvent(tx, {
+          id: summary!.id,
+          workspaceId,
+          type: "summary.published",
+          actorId: locked.job.actorId,
+          executor: "workflow",
+          operationId: jobId,
+          noteId: locked.job.noteId,
+          runId: locked.job.runId,
+          generation: locked.job.source.generation,
+          resultId: summary!.id,
+        });
 
         return publicSummary(summary!);
       });

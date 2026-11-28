@@ -79,6 +79,7 @@ export async function apiResponse(work: () => Promise<unknown>): Promise<Respons
         conflict: 409,
         command_reused: 409,
         invalid_cursor: 400,
+        service_unavailable: 503,
       }[error.code];
       code = error.code;
       message = error.message;

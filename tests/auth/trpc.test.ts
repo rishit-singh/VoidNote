@@ -239,7 +239,10 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
             }));
             // Keep real routers/auth contracts, replacing only runtime composition.
             build.onResolve(
-              { filter: /^@\/server\/(?:analysis|assistant|research|activity|connectors)$/ },
+              {
+                filter:
+                  /^@\/server\/(?:analysis|assistant|research|research-runs|activity|connectors)$/,
+              },
               (args) => ({
                 path: args.path,
                 external: true,
@@ -329,6 +332,14 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
             assistantLeaseCalls.push({ principal, scope });
             return mintAssistantOutputLease(principal, scope);
           },
+        };
+      }
+      if (name === "@/server/research-runs") {
+        return {
+          requestResearchRun: unexpectedRuntimeService,
+          readResearchRun: unexpectedRuntimeService,
+          listResearchRuns: unexpectedRuntimeService,
+          cancelResearchRun: unexpectedRuntimeService,
         };
       }
       if (name === "@/server/research") {
@@ -497,6 +508,28 @@ void describe("tRPC request boundary", { concurrency: false }, () => {
     assert.ok(body.every((entry) => entry.error.data.domainCode === "unauthorized"));
     assert.equal(authentications, 1);
     assert.equal(opened, 0);
+  });
+
+  void it("rejects unauthenticated research run requests and reads before runtime services", async () => {
+    authenticate = () =>
+      Promise.reject(new backend.AuthError("unauthorized", "Sign in to continue.", 401));
+    const requests = [
+      request(
+        "researchRuns.request",
+        { workspaceId, commandId: runId, question: "What evidence supports this claim?" },
+        true,
+      ),
+      request("researchRuns.get", { workspaceId, runId }),
+      request("researchRuns.list", { workspaceId }),
+    ];
+    for (const req of requests) {
+      const response = await handle(req);
+      assert.equal(response.status, 401);
+      assert.equal((await response.json<ErrorBody>()).error.data.domainCode, "unauthorized");
+    }
+    assert.equal(authentications, requests.length);
+    assert.equal(opened, 0);
+    assert.deepEqual(calls, []);
   });
 
   void it("rejects cross-origin mutations before auth or repository work", async () => {

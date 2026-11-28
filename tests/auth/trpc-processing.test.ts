@@ -140,10 +140,13 @@ void describe("processing configuration boundary", { concurrency: false }, () =>
               external: true,
             }));
             // The real routers stay bundled; provider/runtime composition does not.
-            build.onResolve({ filter: /^@\/server\/(?:analysis|assistant|research)$/ }, (args) => ({
-              path: args.path,
-              external: true,
-            }));
+            build.onResolve(
+              { filter: /^@\/server\/(?:analysis|assistant|research|research-runs)$/ },
+              (args) => ({
+                path: args.path,
+                external: true,
+              }),
+            );
           },
         },
       ],
@@ -159,6 +162,14 @@ void describe("processing configuration boundary", { concurrency: false }, () =>
           assistantPolicy: unexpectedRuntimeService,
           notifyAssistantTurn: unexpectedRuntimeService,
           createAssistantOutputLease: unexpectedRuntimeService,
+        };
+      }
+      if (name === "@/server/research-runs") {
+        return {
+          requestResearchRun: unexpectedRuntimeService,
+          readResearchRun: unexpectedRuntimeService,
+          listResearchRuns: unexpectedRuntimeService,
+          cancelResearchRun: unexpectedRuntimeService,
         };
       }
       if (name === "@/server/research") {

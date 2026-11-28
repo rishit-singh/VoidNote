@@ -6,6 +6,7 @@ import {
   createPublicUrlResearchProvider,
   isPublicResearchAddress,
   publicResearchUrl,
+  ResearchSourceError,
   type PublicSourceTransport,
 } from "../../src/ai/research";
 import { researchPolicySchema } from "../../src/config/research";
@@ -73,9 +74,32 @@ void describe("public research source boundary", () => {
         policy,
         AbortSignal.timeout(1000),
       ),
-      /prohibited address/,
+      (error: unknown) =>
+        error instanceof ResearchSourceError && error.code === "source_address_rejected",
     );
     assert.deepEqual(requested, ["public.org"]);
+  });
+
+  void it("uses stable source error codes without exposing transport details in the message", async () => {
+    const internalCause = new Error("private transport detail with https://secret.invalid/");
+    const transport: PublicSourceTransport = {
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+      request: () => Promise.reject(internalCause),
+    };
+
+    await assert.rejects(
+      createPublicUrlResearchProvider(transport).retrieve(
+        "https://public.org/ada",
+        policy,
+        AbortSignal.timeout(1000),
+      ),
+      (error: unknown) =>
+        error instanceof ResearchSourceError &&
+        error.code === "source_connect_failed" &&
+        error.message === "Research source connection failed." &&
+        error.cause === internalCause &&
+        !error.message.includes("secret.invalid"),
+    );
   });
 
   void it("passes resolved public addresses to the pinned transport and saves exact text lineage", async () => {
@@ -129,7 +153,8 @@ void describe("public research source boundary", () => {
         policy,
         AbortSignal.timeout(1000),
       ),
-      /byte limit/,
+      (error: unknown) =>
+        error instanceof ResearchSourceError && error.code === "source_body_failed",
     );
     assert.equal(cancelled, true);
   });
@@ -159,7 +184,8 @@ void describe("public research source boundary", () => {
         largerRawPolicy,
         AbortSignal.timeout(1000),
       ),
-      /Extracted source exceeds the byte limit/,
+      (error: unknown) =>
+        error instanceof ResearchSourceError && error.code === "source_extract_failed",
     );
     assert.equal(requestLimit, 2000);
   });
@@ -220,7 +246,8 @@ void describe("public research source boundary", () => {
         policy,
         AbortSignal.timeout(1000),
       ),
-      /redirect limit/,
+      (error: unknown) =>
+        error instanceof ResearchSourceError && error.code === "source_http_failed",
     );
     assert.equal(calls, 4);
     transport.resolve = () => Promise.resolve(["8.8.8.8", "10.0.0.1"]);
@@ -230,7 +257,8 @@ void describe("public research source boundary", () => {
         policy,
         AbortSignal.timeout(1000),
       ),
-      /prohibited address/,
+      (error: unknown) =>
+        error instanceof ResearchSourceError && error.code === "source_address_rejected",
     );
     assert.equal(calls, 4);
   });

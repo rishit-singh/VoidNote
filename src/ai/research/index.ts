@@ -25,6 +25,8 @@ export type {
   ResearchSource,
   SourceResearchProvider,
 } from "./ports";
+export type { ResearchSourceErrorCode } from "./source-errors";
+export { ResearchSourceError } from "./source-errors";
 export type { PublicSourceTransport } from "./sources";
 export {
   createPublicUrlResearchProvider,

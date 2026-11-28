@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { DEFAULT_RESEARCH_MAX_RESPONSE_BYTES } from "../../config/research";
+import { ResearchSourceError, researchSourceError } from "./source-errors";
 import {
   isPublicResearchAddress,
   type PublicSourceTransport,
@@ -25,7 +26,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
   const separator = wire.indexOf("\r\n\r\n");
 
   if (separator < 0 || separator > HEADER_BYTES) {
-    throw new Error("Invalid source HTTP headers.");
+    throw new ResearchSourceError("source_http_failed");
   }
 
   const lines = wire.slice(0, separator).split("\r\n");
@@ -33,7 +34,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
   const status = /^HTTP\/1\.[01] (\d{3})(?: |$)/.exec(lines.shift() ?? "");
 
   if (!status) {
-    throw new Error("Invalid source HTTP status.");
+    throw new ResearchSourceError("source_http_failed");
   }
 
   const headers = new Headers();
@@ -42,13 +43,13 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
     const match = /^([!#$%&'*+.^_`|~0-9A-Za-z-]+):[ \t]*(.*)$/.exec(line);
 
     if (!match?.[1] || match[2] === undefined) {
-      throw new Error("Invalid source HTTP header.");
+      throw new ResearchSourceError("source_http_failed");
     }
 
     const name = match[1].toLowerCase();
 
     if ((name === "content-length" || name === "transfer-encoding") && headers.has(name)) {
-      throw new Error("Ambiguous source HTTP framing.");
+      throw new ResearchSourceError("source_http_failed");
     }
 
     // Cookies are neither sent nor persisted.
@@ -60,7 +61,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
   const encoding = headers.get("content-encoding");
 
   if (encoding && encoding !== "identity") {
-    throw new Error("Compressed source responses are not supported.");
+    throw new ResearchSourceError("source_body_failed");
   }
 
   const transfer = headers.get("transfer-encoding");
@@ -68,14 +69,14 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
   const length = headers.get("content-length");
 
   if (transfer && length) {
-    throw new Error("Ambiguous source HTTP framing.");
+    throw new ResearchSourceError("source_http_failed");
   }
 
   let body = bytes.slice(separator + 4);
 
   if (transfer) {
     if (transfer.toLowerCase() !== "chunked") {
-      throw new Error("Unsupported source HTTP transfer.");
+      throw new ResearchSourceError("source_http_failed");
     }
 
     const chunks: Uint8Array[] = [];
@@ -90,13 +91,13 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
       const lineEnd = body.indexOf(13, offset);
 
       if (lineEnd < 0 || body[lineEnd + 1] !== 10 || lineEnd - offset > 100) {
-        throw new Error("Invalid chunk header.");
+        throw new ResearchSourceError("source_body_failed");
       }
 
       const hex = new TextDecoder().decode(body.slice(offset, lineEnd)).split(";")[0] ?? "";
 
       if (!/^[0-9a-fA-F]{1,8}$/.test(hex)) {
-        throw new Error("Invalid chunk length.");
+        throw new ResearchSourceError("source_body_failed");
       }
 
       const chunkSize = parseInt(hex, 16);
@@ -105,7 +106,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
 
       if (chunkSize === 0) {
         if (body[offset] !== 13 || body[offset + 1] !== 10 || offset + 2 !== body.length) {
-          throw new Error("Incomplete or unsupported source HTTP trailers.");
+          throw new ResearchSourceError("source_body_failed");
         }
 
         terminated = true;
@@ -120,7 +121,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
         body[offset + chunkSize] !== 13 ||
         body[offset + chunkSize + 1] !== 10
       ) {
-        throw new Error("Source chunk exceeds the bounded body.");
+        throw new ResearchSourceError("source_body_failed");
       }
 
       chunks.push(body.slice(offset, offset + chunkSize));
@@ -128,7 +129,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
     }
 
     if (!terminated) {
-      throw new Error("Source chunks were interrupted.");
+      throw new ResearchSourceError("source_body_failed");
     }
 
     body = new Uint8Array(size);
@@ -141,18 +142,18 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
 
     headers.delete("transfer-encoding");
   } else if (length && (!/^\d+$/.test(length) || Number(length) !== body.length)) {
-    throw new Error("Source body was interrupted.");
+    throw new ResearchSourceError("source_body_failed");
   }
 
   if (body.length > maxResponseBytes) {
-    throw new Error("Source body exceeds the byte limit.");
+    throw new ResearchSourceError("source_body_failed");
   }
 
   headers.set("content-length", String(body.length));
   const code = Number(status[1]);
 
   if (code < 200 || code > 599) {
-    throw new Error("Unsupported source HTTP status.");
+    throw new ResearchSourceError("source_http_failed");
   }
 
   return new Response([204, 205, 304].includes(code) ? null : body, { status: code, headers });
@@ -168,31 +169,39 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
 export function createWorkerPublicSourceTransport(): PublicSourceTransport {
   return {
     async resolve(hostname, signal) {
-      const url = new URL("https://cloudflare-dns.com/dns-query");
+      try {
+        const url = new URL("https://cloudflare-dns.com/dns-query");
 
-      url.searchParams.set("name", hostname);
-      url.searchParams.set("type", "A");
-      const response = await fetch(url, {
-        headers: { accept: "application/dns-json" },
-        // workerd supports only follow/manual. Reject the trusted resolver's
-        // redirects through the non-2xx guard below; never follow a new endpoint.
-        redirect: "manual",
-        signal,
-      });
+        url.searchParams.set("name", hostname);
+        url.searchParams.set("type", "A");
+        const response = await fetch(url, {
+          headers: { accept: "application/dns-json" },
+          // workerd supports only follow/manual. Reject the trusted resolver's
+          // redirects through the non-2xx guard below; never follow a new endpoint.
+          redirect: "manual",
+          signal,
+        });
 
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw new Error("Public source DNS lookup failed.");
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw new ResearchSourceError("source_dns_lookup_failed");
+        }
+
+        // Fixed trusted DNS endpoint; no user-controlled URL is passed to fetch.
+        const text = await readBoundedResearchBody(response, 32_768, signal);
+
+        const result = dnsResponseSchema.parse(JSON.parse(text));
+
+        return (result.Answer ?? [])
+          .filter((answer) => answer.type === 1)
+          .map((answer) => answer.data);
+      } catch (error) {
+        if (signal.aborted && error instanceof Error) {
+          throw error;
+        }
+
+        throw researchSourceError("source_dns_lookup_failed", error);
       }
-
-      // Fixed trusted DNS endpoint; no user-controlled URL is passed to fetch.
-      const text = await readBoundedResearchBody(response, 32_768, signal);
-
-      const result = dnsResponseSchema.parse(JSON.parse(text));
-
-      return (result.Answer ?? [])
-        .filter((answer) => answer.type === 1)
-        .map((answer) => answer.data);
     },
     async request(url, addresses, maxResponseBytes, signal) {
       if (
@@ -200,24 +209,35 @@ export function createWorkerPublicSourceTransport(): PublicSourceTransport {
         maxResponseBytes < 1 ||
         maxResponseBytes > DEFAULT_RESEARCH_MAX_RESPONSE_BYTES
       ) {
-        throw new Error("Source response byte limit is invalid.");
+        throw new ResearchSourceError("source_policy_invalid");
       }
 
       const address = addresses[0];
 
       if (!address || !addresses.every(isPublicResearchAddress)) {
-        throw new Error("Unvalidated source address.");
+        throw new ResearchSourceError("source_address_rejected");
       }
 
       signal.throwIfAborted();
       // Keep the Workers-only socket import behind retrieval for Node/OpenNext.
-      const { connect } = await import("cloudflare:sockets");
+      const plain = await (async () => {
+        try {
+          const { connect } = await import("cloudflare:sockets");
 
-      signal.throwIfAborted();
-      const plain = connect(
-        { hostname: address, port: 443 },
-        { secureTransport: "starttls", allowHalfOpen: false },
-      );
+          signal.throwIfAborted();
+
+          return connect(
+            { hostname: address, port: 443 },
+            { secureTransport: "starttls", allowHalfOpen: false },
+          );
+        } catch (error) {
+          if (signal.aborted && error instanceof Error) {
+            throw error;
+          }
+
+          throw researchSourceError("source_connect_failed", error);
+        }
+      })();
 
       void plain.closed.catch(() => {});
       let socket = plain;
@@ -229,36 +249,64 @@ export function createWorkerPublicSourceTransport(): PublicSourceTransport {
       signal.addEventListener("abort", abort, { once: true });
 
       try {
-        await plain.opened;
+        try {
+          await plain.opened;
+        } catch (error) {
+          if (signal.aborted && error instanceof Error) {
+            throw error;
+          }
+
+          throw researchSourceError("source_connect_failed", error);
+        }
+
         signal.throwIfAborted();
+
         // This is a startTls option, not a connect option. Do not omit it even
         // when a runtime warns/rejects: the IP certificate is not the URL identity.
-        socket = plain.startTls({ expectedServerHostname: url.hostname });
-        void socket.closed.catch(() => {});
-        await socket.opened;
+        try {
+          socket = plain.startTls({ expectedServerHostname: url.hostname });
+          void socket.closed.catch(() => {});
+          await socket.opened;
+        } catch (error) {
+          if (signal.aborted && error instanceof Error) {
+            throw error;
+          }
+
+          throw researchSourceError("source_tls_failed", error);
+        }
+
         signal.throwIfAborted();
-        const writer = socket.writable.getWriter();
+        let writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
 
         try {
+          writer = socket.writable.getWriter();
           await writer.write(
             new TextEncoder().encode(
               `GET ${url.pathname}${url.search} HTTP/1.1\r\nHost: ${url.hostname}\r\nAccept: text/html,text/plain,text/markdown\r\nAccept-Encoding: identity\r\nConnection: close\r\nUser-Agent: VoidNote-Research/1.0\r\n\r\n`,
             ),
           );
+        } catch (error) {
+          if (signal.aborted && error instanceof Error) {
+            throw error;
+          }
+
+          throw researchSourceError("source_write_failed", error);
         } finally {
-          writer.releaseLock();
+          writer?.releaseLock();
         }
 
-        const reader = socket.readable.getReader();
+        let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
         const parts: Uint8Array[] = [];
 
         let size = 0;
 
         try {
+          reader = socket.readable.getReader();
+
           while (true) {
             signal.throwIfAborted();
-            const next = (await reader.read()) as ReadableStreamReadResult<Uint8Array>;
+            const next = await reader.read();
 
             if (next.done) {
               break;
@@ -268,13 +316,19 @@ export function createWorkerPublicSourceTransport(): PublicSourceTransport {
 
             // Bound framing overhead as well as the decoded HTTP entity.
             if (size > HEADER_BYTES + maxResponseBytes * 2) {
-              throw new Error("Source wire response exceeds the bound.");
+              throw new ResearchSourceError("source_body_failed");
             }
 
             parts.push(next.value);
           }
+        } catch (error) {
+          if (signal.aborted && error instanceof Error) {
+            throw error;
+          }
+
+          throw researchSourceError("source_read_failed", error);
         } finally {
-          reader.releaseLock();
+          reader?.releaseLock();
         }
 
         signal.throwIfAborted();

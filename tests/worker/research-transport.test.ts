@@ -86,7 +86,7 @@ void test("DNS redirects fail closed without following the replacement endpoint"
   requests.length = 0;
   const response = await worker.dispatchFetch("http://localhost/");
   assert.equal(response.status, 502);
-  assert.deepEqual(await response.json(), { error: "Public source DNS lookup failed." });
+  assert.deepEqual(await response.json(), { error: "source_dns_lookup_failed" });
   assert.equal(requests.length, 1);
   assert.equal(new URL(requests[0]!).hostname, "cloudflare-dns.com");
 });
@@ -96,7 +96,7 @@ void test("non-success DNS response fails before returning addresses", async () 
   requests.length = 0;
   const response = await worker.dispatchFetch("http://localhost/");
   assert.equal(response.status, 502);
-  assert.deepEqual(await response.json(), { error: "Public source DNS lookup failed." });
+  assert.deepEqual(await response.json(), { error: "source_dns_lookup_failed" });
   assert.equal(requests.length, 1);
 });
 
@@ -105,7 +105,7 @@ void test("pinned-IP retrieval rejects prohibited destinations without an unpinn
   const response = await worker.dispatchFetch("http://localhost/pinned-request");
   assert.equal(response.status, 502);
   assert.deepEqual(await response.json(), {
-    error: "Unvalidated source address.",
+    error: "source_address_rejected",
   });
   assert.deepEqual(requests, [], "No unpinned fetch fallback is allowed.");
 });
@@ -114,6 +114,6 @@ void test("pinned transport rejects response limits above the global cap before 
   const response = await worker.dispatchFetch("http://localhost/oversized-limit");
   assert.equal(response.status, 502);
   assert.deepEqual(await response.json(), {
-    error: "Source response byte limit is invalid.",
+    error: "source_policy_invalid",
   });
 });

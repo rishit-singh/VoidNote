@@ -1,5 +1,6 @@
 import { executionTrace, tracedOperations } from "../../src/telemetry/execution";
 import { WorkspaceError } from "../../src/contracts/workspace";
+import { ResearchSourceError } from "../../src/ai/research/source-errors";
 
 const scope = {
   workspaceId: "11111111-1111-4111-8111-111111111111",
@@ -26,6 +27,13 @@ export default {
           },
         );
         return Response.json(result);
+      }
+      if (mode === "/source-error") {
+        await executionTrace(env, scope, "research.run.retrieve", () =>
+          Promise.reject(
+            new ResearchSourceError("source_tls_failed", new Error("PRIVATE TLS detail")),
+          ),
+        );
       }
       if (mode === "/workspace-error") {
         await executionTrace(env, scope, "research.workflow", () =>

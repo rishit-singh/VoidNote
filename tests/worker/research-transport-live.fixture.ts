@@ -7,6 +7,7 @@ import {
 } from "../../src/ai/research/sources";
 import { createWorkerPublicSourceTransport } from "../../src/ai/research/worker-transport";
 import { researchPolicySchema } from "../../src/config/research";
+import { ResearchSourceError } from "../../src/ai/research/source-errors";
 
 async function handshakeOnly(ip: string, hostname: string, signal: AbortSignal) {
   if (!isPublicResearchAddress(ip)) throw new Error("Invalid diagnostic destination.");
@@ -80,26 +81,11 @@ const fixture = {
           extractedTextBytes: new TextEncoder().encode(result.text).byteLength,
         });
       } catch (error) {
-        const knownErrors = new Set([
-          "Public source resolves to a prohibited address.",
-          "Public source exceeds the byte limit.",
-          "Source body exceeds the byte limit.",
-          "Extracted source exceeds the byte limit.",
-          "Public source is not supported text.",
-          "Public source has no extractable text.",
-          "Public source redirect limit.",
-          "Public source DNS lookup failed.",
-          "Unvalidated source address.",
-          "Source wire response exceeds the bound.",
-        ]);
         return Response.json({
           status: 502,
           tlsAndHttpSucceeded: false,
           rawResponseBytes,
-          error:
-            error instanceof Error && knownErrors.has(error.message)
-              ? error.message
-              : "Source transport failed.",
+          error: error instanceof ResearchSourceError ? error.code : "source_transport_failed",
         });
       }
     }

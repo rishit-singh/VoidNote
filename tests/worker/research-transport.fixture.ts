@@ -1,4 +1,5 @@
 import { createWorkerPublicSourceTransport } from "../../src/ai/research/worker-transport";
+import { ResearchSourceError } from "../../src/ai/research/source-errors";
 
 const fixture = {
   async fetch(request: Request) {
@@ -29,7 +30,7 @@ const fixture = {
     } catch (error) {
       return Response.json(
         {
-          error: error instanceof Error ? error.message : "unknown",
+          error: error instanceof ResearchSourceError ? error.code : "internal_error",
         },
         { status: 502 },
       );

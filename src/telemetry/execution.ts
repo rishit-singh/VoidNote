@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { trace } from "@opentelemetry/api";
 import { ZodError } from "zod";
 import { WorkspaceError } from "../contracts/workspace";
+import { ResearchSourceError } from "../ai/research/source-errors";
 import type { ResearchExtractionFailureCode } from "../ai/research";
 
 type Scope = {
@@ -111,6 +112,7 @@ function identifiers(scope: Scope): Attribute[] {
 /** Stable categories only: provider/database messages may contain source content. */
 function errorType(error: unknown): string {
   if (!(error instanceof Error)) return "unknown";
+  if (error instanceof ResearchSourceError) return "ResearchSourceError";
   if (error instanceof WorkspaceError) return "WorkspaceError";
   if (error instanceof TypeError) return "TypeError";
   if (error instanceof SyntaxError) return "SyntaxError";
@@ -332,6 +334,9 @@ export async function executionTrace<T>(
     } catch (error) {
       failed = true;
       attributes.push(text("error.type", errorType(error)));
+      if (error instanceof ResearchSourceError) {
+        attributes.push(text("voidnote.source_error_code", error.code));
+      }
       if (error instanceof WorkspaceError && workspaceErrorCodes.has(error.code)) {
         attributes.push(text("voidnote.error.domain_code", error.code));
       }

@@ -150,6 +150,18 @@ void test("wrapped database failures export only bounded cause classes and SQLST
   assert.ok(attributes.some(([key, value]) => key === "db.sqlstate" && value === "23505"));
 });
 
+void test("source failures expose a static stage without raw upstream errors", async (t) => {
+  const { mf, bodies } = start(t);
+  const response = await mf.dispatchFetch("https://app.test/source-error");
+  assert.equal(response.status, 503);
+  const body = bodies[0]!;
+  assert.doesNotMatch(body, /PRIVATE|TLS detail/);
+  const failure = spans(body).find((span) => span.name === "research.run.retrieve")!;
+  const attributes = new Map(failure.attributes.map(({ key, value }) => [key, value.stringValue]));
+  assert.equal(attributes.get("error.type"), "ResearchSourceError");
+  assert.equal(attributes.get("voidnote.source_error_code"), "source_tls_failed");
+});
+
 void test("WorkspaceError exposes only an allowlisted domain code", async (t) => {
   const { mf, bodies } = start(t);
   const response = await mf.dispatchFetch("https://app.test/workspace-error");

@@ -2,6 +2,7 @@ import { isIP } from "node:net";
 
 import type { ResearchPolicy } from "../../config/research";
 import type { ResearchSource, SourceResearchProvider } from "./ports";
+import { ResearchSourceError, researchSourceError } from "./source-errors";
 
 /** Transport must connect to exactly one of these validated addresses, retaining
  * the URL hostname for TLS verification. Ordinary fetch(url) is NOT an adapter. */
@@ -161,7 +162,13 @@ export function createPublicUrlResearchProvider(
       policy: ResearchPolicy,
       signal: AbortSignal,
     ): Promise<ResearchSource> {
-      let url = publicResearchUrl(requestedUrl);
+      let url: URL;
+
+      try {
+        url = publicResearchUrl(requestedUrl);
+      } catch (error) {
+        throw researchSourceError("source_address_rejected", error);
+      }
 
       const seen = new Set<string>();
 
@@ -169,21 +176,41 @@ export function createPublicUrlResearchProvider(
         signal.throwIfAborted();
 
         if (seen.has(url.href)) {
-          throw new Error("Public source redirect loop.");
+          throw new ResearchSourceError("source_http_failed");
         }
 
         seen.add(url.href);
-        const addresses = await transport.resolve(url.hostname, signal);
+        let addresses: string[];
+
+        try {
+          addresses = await transport.resolve(url.hostname, signal);
+        } catch (error) {
+          if (signal.aborted && error instanceof Error) {
+            throw error;
+          }
+
+          throw researchSourceError("source_dns_lookup_failed", error);
+        }
 
         if (
           !addresses.length ||
           addresses.length > 16 ||
           !addresses.every(isPublicResearchAddress)
         ) {
-          throw new Error("Public source resolves to a prohibited address.");
+          throw new ResearchSourceError("source_address_rejected");
         }
 
-        const response = await transport.request(url, addresses, policy.maxResponseBytes, signal);
+        let response: Response;
+
+        try {
+          response = await transport.request(url, addresses, policy.maxResponseBytes, signal);
+        } catch (error) {
+          if (signal.aborted && error instanceof Error) {
+            throw error;
+          }
+
+          throw researchSourceError("source_connect_failed", error);
+        }
 
         if ([301, 302, 303, 307, 308].includes(response.status)) {
           const location = response.headers.get("location");
@@ -191,10 +218,15 @@ export function createPublicUrlResearchProvider(
           await response.body?.cancel();
 
           if (!location || redirects === policy.maxRedirects) {
-            throw new Error("Public source redirect limit.");
+            throw new ResearchSourceError("source_http_failed");
           }
 
-          url = publicResearchUrl(new URL(location, url).href);
+          try {
+            url = publicResearchUrl(new URL(location, url).href);
+          } catch (error) {
+            throw researchSourceError("source_http_failed", error);
+          }
+
           continue;
         }
 
@@ -202,19 +234,29 @@ export function createPublicUrlResearchProvider(
 
         if (!response.ok || !type || !["text/plain", "text/html", "text/markdown"].includes(type)) {
           await response.body?.cancel();
-          throw new Error("Public source is not supported text.");
+          throw new ResearchSourceError("source_http_failed");
         }
 
-        const body = await readBoundedResearchBody(response, policy.maxResponseBytes, signal);
+        let body: string;
+
+        try {
+          body = await readBoundedResearchBody(response, policy.maxResponseBytes, signal);
+        } catch (error) {
+          if (signal.aborted && error instanceof Error) {
+            throw error;
+          }
+
+          throw researchSourceError("source_body_failed", error);
+        }
 
         const text = sourceText(body, type === "text/html");
 
         if (!text) {
-          throw new Error("Public source has no extractable text.");
+          throw new ResearchSourceError("source_extract_failed");
         }
 
         if (new TextEncoder().encode(text).byteLength > policy.maxSourceBytes) {
-          throw new Error("Extracted source exceeds the byte limit.");
+          throw new ResearchSourceError("source_extract_failed");
         }
 
         const digestBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -233,7 +275,7 @@ export function createPublicUrlResearchProvider(
         };
       }
 
-      throw new Error("Public source redirect limit.");
+      throw new ResearchSourceError("source_http_failed");
     },
   };
 }

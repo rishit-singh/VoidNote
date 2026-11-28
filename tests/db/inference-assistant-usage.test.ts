@@ -58,7 +58,7 @@ function fixture(raw: Ai) {
     require: (name: string) => unknown,
   ) => void;
   evaluate(fixtureModule, fixtureModule.exports, (name: string) => {
-    if (isBuiltin(name)) return requireBuiltin(name) as unknown;
+    if (isBuiltin(name) || name === "zod") return requireBuiltin(name) as unknown;
     if (name !== "./assistant") return {};
 
     return {

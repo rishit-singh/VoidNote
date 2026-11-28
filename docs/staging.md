@@ -48,10 +48,10 @@ Created during setup:
 - GitHub staging database secret and Worker auth/recording capability secrets.
 
 Application migrations through `0020` and deployment succeeded in
-[CI run 46115866017](https://github.com/rishit-singh/VoidNote/actions/runs/46115866017).
+[CI run 46116957015](https://github.com/rishit-singh/VoidNote/actions/runs/46116957015).
 
-- Deployed commit: `5d270b0`.
-- Cloudflare version: `6a9942dc-4475-4111-beb0-dd4f4b215a62`.
+- Deployed commit: `afc7449`.
+- Cloudflare version: `149de844-ae4f-40e2-98a6-f17b0a422ee6`.
 - Hosted homepage and health endpoint return HTTP 200.
 - Unauthenticated session requests return HTTP 401.
 - Chromium renders the landing page and sign-in dialog.
@@ -59,8 +59,13 @@ Application migrations through `0020` and deployment succeeded in
 Authenticated HTTP checks passed Supabase login, SSR session bootstrap, workspace
 overview, note create/read/list/delete, legacy research listing and disabled
 research admission. General research listing returned HTTP 500 because its route
-forwarded workspace scope inside a strict filter DTO; its fix is pending
-redeployment and hosted verification.
+forwarded workspace scope inside a strict filter DTO. The fix and a real-router
+regression test passed the 49-test auth suite and have been deployed; hosted
+reverification passed at 2026-11-28 06:37:33 UTC. Authenticated listing returns
+HTTP 200 for all/active/finished and note-scoped filters. Unknown fields and
+invalid statuses return HTTP 400. Session bootstrap remains HTTP 200, and
+disabled research admission remains HTTP 409. Thread-scoped listing was not
+exercised in this hosted check.
 
 Google OAuth is not
 configured for this separate Supabase project. Inference and discovery remain

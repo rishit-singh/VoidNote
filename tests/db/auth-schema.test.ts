@@ -45,12 +45,26 @@ void it("schema generation references auth.users without managing provider-owned
   const previous: unknown = JSON.parse(
     await readFile(new URL("../../drizzle/meta/0018_snapshot.json", import.meta.url), "utf8"),
   );
-  const migration = await generateMigration(previous, current);
-  assert.equal(migration.length, 1);
-  assert.match(migration[0]!, /^ALTER TABLE "user_profiles" ADD CONSTRAINT/);
-  assert.match(migration[0]!, /REFERENCES "auth"\."users"/);
   const recorded: unknown = JSON.parse(
     await readFile(new URL("../../drizzle/meta/0019_snapshot.json", import.meta.url), "utf8"),
   );
-  assert.deepEqual(await generateMigration(recorded, current), []);
+  const migration = await generateMigration(previous, recorded);
+  assert.equal(migration.length, 1);
+  assert.match(migration[0]!, /^ALTER TABLE "user_profiles" ADD CONSTRAINT/);
+  assert.match(migration[0]!, /REFERENCES "auth"\."users"/);
+  const journal = z
+    .object({ entries: z.array(z.object({ idx: z.number().int().nonnegative() })).nonempty() })
+    .parse(
+      JSON.parse(
+        await readFile(new URL("../../drizzle/meta/_journal.json", import.meta.url), "utf8"),
+      ),
+    );
+  const latestIndex = String(journal.entries.at(-1)!.idx).padStart(4, "0");
+  const latest: unknown = JSON.parse(
+    await readFile(
+      new URL(`../../drizzle/meta/${latestIndex}_snapshot.json`, import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(await generateMigration(latest, current), []);
 });

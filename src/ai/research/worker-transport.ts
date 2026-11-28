@@ -34,7 +34,10 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
   const separator = wire.indexOf("\r\n\r\n");
 
   if (separator < 0) {
-    throw invalidFraming("header_terminator_missing");
+    throw new ResearchSourceError("source_http_framing_invalid", undefined, {
+      framingReason: "header_terminator_missing",
+      responseByteCount: bytes.byteLength,
+    });
   }
 
   if (separator > HEADER_BYTES) {

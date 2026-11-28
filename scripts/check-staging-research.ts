@@ -29,6 +29,7 @@ function parseArguments(args: string[]) {
       workspace: { type: "string" },
       user: { type: "string" },
       preflight: { type: "boolean", default: false },
+      "inspect-run": { type: "string" },
     },
     strict: true,
   });
@@ -54,6 +55,7 @@ function parseArguments(args: string[]) {
     baseUrl: url.origin,
     userId: userIdSchema.parse(values.user),
     preflight: values.preflight,
+    inspectRun: values["inspect-run"] ? z.uuid().parse(values["inspect-run"]) : undefined,
   };
 }
 
@@ -69,7 +71,7 @@ async function sessionFor(page: Page) {
 }
 
 async function main() {
-  const { baseUrl, userId, preflight } = parseArguments(process.argv.slice(2));
+  const { baseUrl, userId, preflight, inspectRun } = parseArguments(process.argv.slice(2));
   const supabaseUrl = requiredEnvironment("STAGING_SUPABASE_URL");
   const serviceRoleKey = requiredEnvironment("STAGING_SUPABASE_SERVICE_ROLE_KEY");
   const publishableKey = requiredEnvironment("STAGING_SUPABASE_PUBLISHABLE_KEY");
@@ -160,6 +162,26 @@ async function main() {
       "Authenticated user is in the wrong workspace.",
     );
 
+    if (inspectRun) {
+      await page.goto(`${baseUrl}/research/${inspectRun}`);
+      await page.getByRole("heading", { name: "Research", exact: true }).waitFor();
+      const report = page.locator("main").last();
+      await report.getByText("Completed", { exact: true }).waitFor();
+      const text = await report.innerText();
+      await page.reload();
+      await report.getByText("Completed", { exact: true }).waitFor();
+      assert.equal(await report.innerText(), text, "Saved report changed across reload.");
+      assert.deepEqual(pageErrors, []);
+      console.log(
+        JSON.stringify({
+          checkpoint: "saved-report-reload-checked",
+          runId: inspectRun,
+          reportText: text,
+        }),
+      );
+      return;
+    }
+
     await page.getByRole("button", { name: "New note" }).click();
     await page.waitForURL((url) => /^\/notes\/[0-9a-f-]{36}$/.test(url.pathname), {
       timeout: 15_000,
@@ -214,6 +236,7 @@ async function main() {
 
     await page.goto(new URL(href, baseUrl).href);
     await page.getByRole("heading", { name: "Research", exact: true }).waitFor();
+    const report = page.locator("main").last();
     const completed = page.getByText("Completed", { exact: true });
     const failed = page.getByText("Research stopped before completion", { exact: true });
     await completed
@@ -223,17 +246,20 @@ async function main() {
     assert.equal(
       await failed.isVisible(),
       false,
-      `Research ${runId} failed: ${await page.locator("main").innerText()}`,
+      `Research ${runId} failed: ${await report.innerText()}`,
     );
     await page.getByLabel("Result quality: Answered").waitFor();
 
-    const answer = page.locator("main").getByText(/Curiosity|Perseverance/);
+    const answer = report.getByText(/Curiosity|Perseverance/);
     await answer.first().waitFor();
-    const reportText = await page.locator("main").innerText();
+    const reportText = await report.innerText();
     assert.match(reportText, /Curiosity/i);
     assert.match(reportText, /Perseverance/i);
-    assert.match(reportText, /2012|August 2012/i);
-    assert.match(reportText, /2021|February 2021/i);
+    assert.match(reportText, /(?:Aug(?:ust)?\.?\s+6,?\s+2012|6\s+August\s+2012|2012-08-06)/i);
+    assert.match(reportText, /(?:Feb(?:ruary)?\.?\s+18,?\s+2021|18\s+February\s+2021|2021-02-18)/i);
+    assert.match(reportText, /habitab(?:le|ility)/i);
+    assert.match(reportText, /ancient\s+(?:microbial\s+)?life/i);
+    assert.match(reportText, /sampl(?:e|es|ing)/i);
 
     const citations = page.locator('main a[href^="https://science.nasa.gov/mission/"]');
     const citationHrefs: string[] = [];
@@ -250,11 +276,7 @@ async function main() {
     const savedReport = reportText;
     await page.reload();
     await page.getByText("Completed", { exact: true }).waitFor();
-    assert.equal(
-      await page.locator("main").innerText(),
-      savedReport,
-      "Reload changed the saved report.",
-    );
+    assert.equal(await report.innerText(), savedReport, "Reload changed the saved report.");
 
     const noteHref = await noteHrefFromReport(page);
     await page.goto(new URL(noteHref, baseUrl).href);

@@ -2,6 +2,53 @@
 
 ## Current status
 
+### V3 implementation in progress
+
+The newly approved orchestration supersedes the V2-only design below for new
+runs. This V3 candidate is local and has not been deployed.
+
+```text
+accepted Postgres run → ThinkWorkflow → Think investigation with batched tools
+                                    → checkpointed typed candidate
+                                    → atomic publication (bounded repair)
+```
+
+- `src/ai/research/agent/workflow.ts` owns durable investigation/publication stages.
+- `agent/agent.ts`, `tools.ts`, and `instructions.ts` own native reasoning,
+  bounded tool batches, and versioned instructions. `agent/runtime.ts` captures
+  raw inference usage before settlement. `agent/legacy.ts` retains pinned V2.
+- `src/server/research/worker.ts` exposes Worker-safe application operations;
+  `operations.ts`, `evidence.ts`, and `tool-operations.ts` own their implementation.
+- `src/db/research/runs.ts` enforces source count and UTF-8 byte capacity under
+  the run lock and returns canonical source IDs.
+- `src/ai/research/firecrawl/` implements bounded fresh Markdown retrieval.
+  Ordinary scrape usage remains unknown: the documented
+  `metadata.provider.creditsCost` applies only when a third-party provider route
+  serves the request (replacing the base scrape cost). The ordinary scrape API
+  exposes no documented per-request charge receipt or receipt lookup. Its
+  reservation remains held; neither a fixed price nor account balance changes
+  are recorded as observed per-request usage.
+
+Supporting checks: all TypeScript projects and the staging build passed;
+12 native/runtime contract tests and 31 isolated Node database/provider tests
+passed. The combined Bun database invocation failed because shared fixture
+teardown closed the connection between files; the isolated Node run passed.
+Full-project lint and formatting also passed. The full Worker suite passed
+(225 passed, two skipped). Cancellation handles the runtime's exact
+`instance.not_found` marker without swallowing unrelated failures; completed
+workflows with an unpublished running DB run are terminalized.
+The native V3 Miniflare regression passed: evidence lookup, incomplete typed
+answer, feedback correction, and lost publication acknowledgement produced three
+model calls, two publication attempts with the same ID, and one committed report.
+Its provider and application boundaries are mocked; production usage persistence
+and hosted acceptance remain separate gates.
+The broader DB suite exposed a Workers SDK eager-import regression and a
+clock-dependent activity fixture. Both affected suites passed after fixing the
+import boundary and making the fixture explicitly due. Deployment and hosted
+acceptance remain in progress.
+
+### Previously deployed V2 evidence
+
 Deployed to isolated staging as `a27b9e0` through CI `46165903871`
 (Worker version `9d86464a-f20c-4fed-99fd-06663151ccc4`).
 Real-provider acceptance remains incomplete.
@@ -71,6 +118,32 @@ existing source/context limits. Missing execution version means `workflow-v1`;
   eligibility and citation checks.
 
 ## Remaining acceptance
+
+`7ea0258` deployed through CI `46169700207`, Worker version
+`ec18d593-318f-4356-a0b8-ecdcf7d674f1`. Hosted run
+`02b8a76b-b8b2-5de2-bd3e-a8d3e09e1d9b` completed with a durable
+insufficient-evidence publication receipt. Its authenticated browser reload
+preserved the report exactly. The report explained failed retrieval, avoided
+inventing mission facts, and distinguished unread pages from omitted details.
+This verifies failure-report publication and reload, not a successful comparison.
+NASA retrieval emitted `header_terminator_missing` on all four attempts.
+Recorded spend is $0.119635 assistant plus $0.026321 research ($0.145956 total),
+with no outstanding inference holds.
+
+The acceptance runner's ambiguous `main` selector was corrected locally and a
+read-only `--inspect-run` mode verified the saved report without new inference.
+
+Source-only Cloudflare remote-preview controls reproduced the transport failure
+without model or database bindings. The same NASA request succeeded using
+hostname-based `connect()` with TLS enabled (HTTP 200, 368,282 wire bytes),
+but the application's pinned-IP `startTls({ expectedServerHostname })` path
+returned zero bytes. An intentionally mismatched hostname also returned zero
+bytes and no HTTP response. `socket.opened` alone resolved for both names, so it
+does not establish completed TLS hostname verification. These results isolate
+the failing transport mode but do not justify replacing IP pinning with a
+hostname re-resolution path. No application transport rule was weakened.
+Firecrawl scrape fallback is designed but awaits agreement to share the existing
+200-credit/$1 allowance between search and page retrieval.
 
 The first hosted browser attempt dispatched a native run but failed before
 research inference. Persisted Think logs identified strict scope parsing rejecting

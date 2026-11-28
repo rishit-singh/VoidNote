@@ -66,6 +66,7 @@
       { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
       { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
       { "name": "RESEARCH_AGENT", "class_name": "ResearchAgent" },
+      { "name": "RESEARCH_WORKFLOW_AGENT", "class_name": "ResearchWorkflowAgent" },
       { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
     ],
   },
@@ -74,9 +75,15 @@
     { "tag": "assistant-agent-v1", "new_sqlite_classes": ["AssistantAgent"] },
     { "tag": "activity-hub-v1", "new_sqlite_classes": ["ActivityHub"] },
     { "tag": "research-agent-v1", "new_sqlite_classes": ["ResearchAgent"] },
+    { "tag": "research-workflow-agent-v1", "new_sqlite_classes": ["ResearchWorkflowAgent"] },
   ],
   "r2_buckets": [{ "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-local" }],
   "workflows": [
+    {
+      "binding": "RESEARCH_INVESTIGATION_WORKFLOW",
+      "name": "voidnote-research-investigation-local",
+      "class_name": "ResearchInvestigationWorkflow",
+    },
     {
       "binding": "RESEARCH_RUN_WORKFLOW",
       "name": "voidnote-research-run-local",
@@ -159,6 +166,7 @@
           { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
           { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
           { "name": "RESEARCH_AGENT", "class_name": "ResearchAgent" },
+          { "name": "RESEARCH_WORKFLOW_AGENT", "class_name": "ResearchWorkflowAgent" },
           { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
         ],
       },
@@ -177,6 +185,11 @@
           "binding": "RESEARCH_RUN_WORKFLOW",
           "name": "voidnote-research-run-development",
           "class_name": "ResearchRunWorkflow",
+        },
+        {
+          "binding": "RESEARCH_INVESTIGATION_WORKFLOW",
+          "name": "voidnote-research-investigation-development",
+          "class_name": "ResearchInvestigationWorkflow",
         },
         {
           "binding": "CONVERSATION_SUMMARY_WORKFLOW",
@@ -253,6 +266,7 @@
           { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
           { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
           { "name": "RESEARCH_AGENT", "class_name": "ResearchAgent" },
+          { "name": "RESEARCH_WORKFLOW_AGENT", "class_name": "ResearchWorkflowAgent" },
           { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
         ],
       },
@@ -264,6 +278,11 @@
           "binding": "RESEARCH_RUN_WORKFLOW",
           "name": "voidnote-research-run-staging",
           "class_name": "ResearchRunWorkflow",
+        },
+        {
+          "binding": "RESEARCH_INVESTIGATION_WORKFLOW",
+          "name": "voidnote-research-investigation-staging",
+          "class_name": "ResearchInvestigationWorkflow",
         },
         {
           "binding": "CONVERSATION_SUMMARY_WORKFLOW",
@@ -302,6 +321,7 @@
           { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
           { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
           { "name": "RESEARCH_AGENT", "class_name": "ResearchAgent" },
+          { "name": "RESEARCH_WORKFLOW_AGENT", "class_name": "ResearchWorkflowAgent" },
           { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
         ],
       },
@@ -313,6 +333,11 @@
           "binding": "RESEARCH_RUN_WORKFLOW",
           "name": "voidnote-research-run-production",
           "class_name": "ResearchRunWorkflow",
+        },
+        {
+          "binding": "RESEARCH_INVESTIGATION_WORKFLOW",
+          "name": "voidnote-research-investigation-production",
+          "class_name": "ResearchInvestigationWorkflow",
         },
         {
           "binding": "CONVERSATION_SUMMARY_WORKFLOW",

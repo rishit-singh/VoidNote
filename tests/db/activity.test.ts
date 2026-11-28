@@ -175,6 +175,11 @@ void test("dispatch reservation excludes competing relays and cannot overwrite c
     .from(eventDeliveries)
     .where(eq(eventDeliveries.workspaceId, workspaceId));
   assert.ok(row);
+  // This test exercises competing claims, not database/application clock alignment.
+  await db
+    .update(eventDeliveries)
+    .set({ availableAt: new Date(0) })
+    .where(eq(eventDeliveries.id, row.id));
   const reservations = await Promise.all([repo.reserveDispatch(50), repo.reserveDispatch(50)]);
   assert.equal(reservations.flat().filter((delivery) => delivery.id === row.id).length, 1);
   assert.ok(!(await repo.reserveDispatch(50)).some((delivery) => delivery.id === row.id));

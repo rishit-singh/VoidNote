@@ -26,7 +26,7 @@ function nativeCertificate(ip: string, servername: string): Promise<PeerCertific
 // Explicit, source-only network acceptance. Default runs never fetch live pages.
 // This does not establish model semantics or hosted egress support.
 void test(
-  "real pinned-IP TLS rejects a valid mismatched hostname before HTTP, confirmed against the same native peer certificate",
+  "socket.opened observations are not treated as hostname verification; HTTP controls are separate",
   { skip: process.env.RESEARCH_SOURCE_TLS_PROBE !== "true", timeout: 60_000 },
   async () => {
     const bundle = await build({
@@ -80,11 +80,13 @@ void test(
       assert.equal(response.status, 200);
       const result = (await response.json()) as {
         ip: string;
-        correct: { accepted: boolean; stage: string; httpBytesWritten: number };
-        wrong: { accepted: boolean; stage: string; httpBytesWritten: number };
+        correct: { socketOpened: boolean; stage: string; httpBytesWritten: number };
+        wrong: { socketOpened: boolean; stage: string; httpBytesWritten: number };
       };
-      assert.deepEqual(result.correct, { accepted: true, stage: "tls", httpBytesWritten: 0 });
-      assert.deepEqual(result.wrong, { accepted: false, stage: "tls", httpBytesWritten: 0 });
+      assert.equal(typeof result.correct.socketOpened, "boolean");
+      assert.equal(typeof result.wrong.socketOpened, "boolean");
+      assert.equal(result.correct.httpBytesWritten, 0);
+      assert.equal(result.wrong.httpBytesWritten, 0);
       const correctCertificate = await nativeCertificate(result.ip, "raw.githubusercontent.com");
       assert.ok(correctCertificate.fingerprint256);
       await assert.rejects(nativeCertificate(result.ip, "example.com"), (error: unknown) => {

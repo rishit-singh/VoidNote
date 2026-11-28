@@ -35,6 +35,22 @@ import { createResearchEvidenceRepository } from "./evidence";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
+type ResearchRunSourceInput = {
+  id: string;
+  requestedUrl: string;
+  url: string;
+  title?: string;
+  publishedAt?: string | null;
+  originSourceId?: string | null;
+  disposition?: "retrieved" | "reused";
+  digest: string;
+  retrievedAt: string;
+  text: string;
+};
+
+type SaveResearchRunSourceResult =
+  { status: "saved" | "existing"; id: string } | { status: "capacity"; id: null };
+
 function canonical(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(canonical).join(",")}]`;
@@ -908,61 +924,112 @@ export function createResearchRunsRepository(db: Database | Transaction) {
     });
   }
 
-  async function saveSource(
+  async function saveSources(
     key: ResearchRunExecutionKey,
-    source: {
-      id: string;
-      requestedUrl: string;
-      url: string;
-      title?: string;
-      publishedAt?: string | null;
-      originSourceId?: string | null;
-      disposition?: "retrieved" | "reused";
-      digest: string;
-      retrievedAt: string;
-      text: string;
-    },
-  ) {
+    sources: ResearchRunSourceInput[],
+  ): Promise<SaveResearchRunSourceResult[] | null> {
     return db.transaction(async (tx) => {
       const run = await lockLiveRunScope(tx, key, ["running"]);
 
       if (!run) {
-        return false;
+        return null;
       }
 
-      const [existing] = await tx
-        .select({ id: researchRunSources.id })
+      const policy = researchRunPolicySchema.parse(run.policy);
+
+      const maxSnapshotBytes = Math.min(
+        policy.maxDiscoveryBytes,
+        policy.maxSourceBytes * policy.maxSources,
+      );
+
+      const existingDigests = new Map<string, string>();
+
+      const existingIds = new Set<string>();
+
+      const existingRows = await tx
+        .select({
+          id: researchRunSources.id,
+          digest: researchRunSources.digest,
+          content: researchRunSources.content,
+        })
         .from(researchRunSources)
         .where(
           and(
             eq(researchRunSources.workspaceId, key.workspaceId),
             eq(researchRunSources.runId, key.runId),
-            eq(researchRunSources.digest, source.digest),
           ),
-        )
-        .limit(1);
+        );
 
-      if (existing) {
-        return true;
+      const encoder = new TextEncoder();
+
+      let sourceCount = existingRows.length;
+
+      let sourceBytes = 0;
+
+      for (const source of existingRows) {
+        existingDigests.set(source.digest, source.id);
+        existingIds.add(source.id);
+        sourceBytes += encoder.encode(source.content).byteLength;
       }
 
-      await tx.insert(researchRunSources).values({
-        workspaceId: key.workspaceId,
-        runId: key.runId,
-        id: source.id,
-        requestedUrl: source.requestedUrl,
-        url: source.url,
-        title: source.title ?? null,
-        publishedAt: source.publishedAt ? new Date(source.publishedAt) : null,
-        originSourceId: source.originSourceId ?? null,
-        digest: source.digest,
-        retrievedAt: new Date(source.retrievedAt),
-        content: source.text,
-        disposition: source.disposition ?? "retrieved",
-      });
+      const results: SaveResearchRunSourceResult[] = [];
 
-      return true;
+      for (const source of sources) {
+        const existingId = existingDigests.get(source.digest);
+
+        if (existingId) {
+          results.push({ status: "existing", id: existingId });
+          continue;
+        }
+
+        if (existingIds.has(source.id)) {
+          throw new WorkspaceError(
+            "conflict",
+            "Research source ID was reused with another digest.",
+          );
+        }
+
+        const bytes = encoder.encode(source.text).byteLength;
+
+        if (
+          sourceCount >= policy.maxSources ||
+          bytes > policy.maxSourceBytes ||
+          sourceBytes + bytes > maxSnapshotBytes
+        ) {
+          results.push({ status: "capacity", id: null });
+          continue;
+        }
+
+        await tx.insert(researchRunSources).values({
+          workspaceId: key.workspaceId,
+          runId: key.runId,
+          id: source.id,
+          requestedUrl: source.requestedUrl,
+          url: source.url,
+          title: source.title ?? null,
+          publishedAt: source.publishedAt ? new Date(source.publishedAt) : null,
+          originSourceId: source.originSourceId ?? null,
+          digest: source.digest,
+          retrievedAt: new Date(source.retrievedAt),
+          content: source.text,
+          disposition: source.disposition ?? "retrieved",
+        });
+
+        existingDigests.set(source.digest, source.id);
+        existingIds.add(source.id);
+        sourceCount += 1;
+        sourceBytes += bytes;
+        results.push({ status: "saved", id: source.id });
+      }
+
+      return results;
     });
+  }
+
+  async function saveSource(key: ResearchRunExecutionKey, source: ResearchRunSourceInput) {
+    const [result] = (await saveSources(key, [source])) ?? [];
+
+    return result !== undefined && result.status !== "capacity";
   }
 
   async function loadWork(key: ResearchRunExecutionKey) {
@@ -1599,6 +1666,7 @@ export function createResearchRunsRepository(db: Database | Transaction) {
     pendingInferenceSettlement,
     claim,
     setStage,
+    saveSources,
     saveSource,
     finish,
     reusableSources,

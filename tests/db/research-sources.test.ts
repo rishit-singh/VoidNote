@@ -164,7 +164,13 @@ void describe("public research source boundary", () => {
   });
 
   void it("reports bounded framing reasons without retaining response details", () => {
-    const cases = [
+    const cases: Array<{ response: string; reason: string; responseBytes?: number }> = [
+      { response: "", reason: "header_terminator_missing", responseBytes: 0 },
+      {
+        response: "HTTP/1.1 200",
+        reason: "header_terminator_missing",
+        responseBytes: 12,
+      },
       {
         response: "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nContent-Length: 3\r\n\r\nAda",
         reason: "duplicate_framing_header",
@@ -184,13 +190,15 @@ void describe("public research source boundary", () => {
       },
     ] as const;
 
-    for (const { response, reason } of cases) {
+    for (const { response, reason, ...metadata } of cases) {
       assert.throws(
         () => parseResearchHttpResponse(new TextEncoder().encode(response), 1000),
         (error: unknown) =>
           error instanceof ResearchSourceError &&
           error.code === "source_http_framing_invalid" &&
           error.framingReason === reason &&
+          (metadata.responseBytes === undefined ||
+            error.responseByteCount === metadata.responseBytes) &&
           !error.message.includes("X-Secret") &&
           !error.message.includes("value"),
       );

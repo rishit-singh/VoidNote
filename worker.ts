@@ -16,6 +16,7 @@ export { RecordingProcessingWorkflow } from "./recording-workflow";
 export { SummaryAgent, SummaryWorkflow } from "./src/ai/summary";
 export { AssistantAgent } from "./src/ai/assistant-runtime";
 export { ResearchAgent } from "./src/ai/research/agent-runtime";
+export { ResearchWorkflowAgent, ResearchInvestigationWorkflow } from "./src/ai/research/agent";
 export { ResearchWorkflow } from "./src/ai/research/workflow";
 export { ResearchRunWorkflow } from "./src/ai/research/runs/workflow";
 export { ConversationSummaryWorkflow } from "./src/ai/conversation-summaries";

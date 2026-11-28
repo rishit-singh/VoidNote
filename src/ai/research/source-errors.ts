@@ -17,6 +17,7 @@ export type ResearchSourceErrorMetadata = {
   httpStatus?: number;
   contentTypeCategory?: "expected" | "missing" | "other";
   framingReason?: ResearchHttpFramingReason;
+  responseByteCount?: number;
 };
 
 export type ResearchHttpFramingReason =
@@ -56,6 +57,7 @@ export class ResearchSourceError extends Error {
   readonly httpStatus?: number;
   readonly contentTypeCategory?: "expected" | "missing" | "other";
   readonly framingReason?: ResearchHttpFramingReason;
+  readonly responseByteCount?: number;
 
   constructor(
     code: ResearchSourceErrorCode,
@@ -103,6 +105,15 @@ export class ResearchSourceError extends Error {
       ].includes(metadata.framingReason)
     ) {
       this.framingReason = metadata.framingReason;
+    }
+
+    if (
+      metadata?.responseByteCount !== undefined &&
+      Number.isSafeInteger(metadata.responseByteCount) &&
+      metadata.responseByteCount >= 0 &&
+      metadata.responseByteCount <= 1_100_000
+    ) {
+      this.responseByteCount = metadata.responseByteCount;
     }
   }
 }

@@ -348,6 +348,12 @@ export async function executionTrace<T>(
         if (error.framingReason !== undefined) {
           attributes.push(text("voidnote.source_framing_reason", error.framingReason));
         }
+        if (error.responseByteCount !== undefined) {
+          attributes.push({
+            key: "voidnote.source_response_bytes",
+            value: { intValue: String(error.responseByteCount) },
+          });
+        }
       }
       if (error instanceof WorkspaceError && workspaceErrorCodes.has(error.code)) {
         attributes.push(text("voidnote.error.domain_code", error.code));

@@ -12,6 +12,26 @@ import {
 
 type Binding = NonNullable<ResearchRunEnvironment["RESEARCH_RUN_WORKFLOW"]>;
 
+async function terminateWorkflowIfPresent(binding: Binding, runId: string) {
+  let instance: Awaited<ReturnType<Binding["get"]>>;
+
+  try {
+    instance = await binding.get(runId);
+  } catch (error) {
+    if (error instanceof Error && error.message === "instance.not_found") {
+      return;
+    }
+
+    throw error;
+  }
+
+  const status = await instance.status();
+
+  if (!["complete", "errored", "terminated"].includes(status.status)) {
+    await instance.terminate();
+  }
+}
+
 /** Create/get always share the run's stable command identity. */
 export async function dispatchResearchRun(
   env: ResearchRunEnvironment,
@@ -21,6 +41,61 @@ export async function dispatchResearchRun(
   const work = await withJobDatabase(env, (db) => createResearchRunsRepository(db).loadWork(key));
 
   if (!work) {
+    return;
+  }
+
+  if (researchRunPolicySchema.parse(work.policy).executionVersion === "research-workflow-v3") {
+    if (!env.RESEARCH_WORKFLOW_AGENT || !env.RESEARCH_INVESTIGATION_WORKFLOW) {
+      throw new Error("Research investigation bindings are unavailable.");
+    }
+
+    const { getAgentByName } = await import("agents");
+
+    const agent = await getAgentByName(env.RESEARCH_WORKFLOW_AGENT, researchAgentName(key));
+
+    if (cancel || work.status === "cancelled") {
+      await agent.cancelResearch();
+      await terminateWorkflowIfPresent(env.RESEARCH_INVESTIGATION_WORKFLOW, key.runId);
+
+      return;
+    }
+
+    if (env.RESEARCH_AGENT_ENABLED !== "true") {
+      return;
+    }
+
+    try {
+      await agent.startResearch(key);
+    } catch {
+      // A lost create response is reconciled against the same instance below.
+    }
+
+    const instance = await env.RESEARCH_INVESTIGATION_WORKFLOW.get(key.runId);
+
+    const status = await instance.status();
+
+    if (["errored", "terminated"].includes(status.status)) {
+      await withJobDatabase(env, (db) =>
+        createResearchRunsRepository(db).finish(key, {
+          status: "failed",
+          error: "Research investigation stopped before publication.",
+        }),
+      );
+    } else if (status.status === "complete") {
+      const run = await withJobDatabase(env, (db) =>
+        createResearchRunsRepository(db).loadWork(key),
+      );
+
+      if (run?.status === "running") {
+        await withJobDatabase(env, (db) =>
+          createResearchRunsRepository(db).finish(key, {
+            status: "failed",
+            error: "Research investigation completed without a durably published report.",
+          }),
+        );
+      }
+    }
+
     return;
   }
 

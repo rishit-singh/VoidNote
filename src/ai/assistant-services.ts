@@ -960,7 +960,9 @@ export function createAssistantServices(env: Cloudflare.Env): AssistantServices 
                 configured && env.RESEARCH_RUN_WORKFLOW
                   ? pinResearchRunPolicy(
                       configured,
-                      env.RESEARCH_AGENT_ENABLED === "true" ? "research-agent-v2" : "workflow-v1",
+                      env.RESEARCH_AGENT_ENABLED === "true"
+                        ? "research-workflow-v3"
+                        : "workflow-v1",
                     )
                   : null,
                 context.turnId,

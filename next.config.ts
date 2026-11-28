@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 import type { NextConfig } from "next";
 
-void initOpenNextCloudflareForDev();
+// CI builds need binding shape/context, not access to live provider resources.
+void initOpenNextCloudflareForDev({ remoteBindings: !process.env.CI });
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 

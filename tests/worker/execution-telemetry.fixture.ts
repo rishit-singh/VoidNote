@@ -35,6 +35,16 @@ export default {
           ),
         );
       }
+      if (mode === "/source-http-error") {
+        await executionTrace(env, scope, "research.run.retrieve", () =>
+          Promise.reject(
+            new ResearchSourceError("source_http_status_failed", new Error("PRIVATE response"), {
+              httpStatus: 403,
+              contentTypeCategory: "other",
+            }),
+          ),
+        );
+      }
       if (mode === "/workspace-error") {
         await executionTrace(env, scope, "research.workflow", () =>
           Promise.reject(new WorkspaceError("forbidden", "PRIVATE workspace message")),

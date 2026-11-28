@@ -278,7 +278,7 @@ async function detail(
   });
 }
 
-export function createResearchRunsRepository(db: Database) {
+export function createResearchRunsRepository(db: Database | Transaction) {
   async function request(
     principal: Principal,
     raw: RequestResearchRun,
@@ -351,7 +351,8 @@ export function createResearchRunsRepository(db: Database) {
       if (
         duplicate &&
         policy &&
-        canonical(duplicate.policy) === canonical(researchRunPolicySchema.parse(policy))
+        canonical(researchRunPolicySchema.parse(duplicate.policy)) ===
+          canonical(researchRunPolicySchema.parse(policy))
       ) {
         const sameRequest =
           canonical(requestIdentity(duplicate.payload)) === canonical(requestIdentity(payload));
@@ -1435,7 +1436,10 @@ export function createResearchRunsRepository(db: Database) {
         workspaceId: key.workspaceId,
         type: input.status === "completed" ? "research.completed" : "research.failed",
         actorId: run.actorId,
-        executor: "workflow",
+        executor:
+          researchRunPolicySchema.parse(run.policy).executionVersion === "research-agent-v2"
+            ? "agent"
+            : "workflow",
         operationId: key.runId,
         ...(run.noteId ? { noteId: run.noteId } : {}),
         ...(run.personId ? { personId: run.personId } : {}),

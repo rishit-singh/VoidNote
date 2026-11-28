@@ -957,7 +957,12 @@ export function createAssistantServices(env: Cloudflare.Env): AssistantServices 
                   commandId: context.operationId,
                   noteId: input.noteId === undefined ? current.thread.noteId : input.noteId,
                 },
-                configured && env.RESEARCH_RUN_WORKFLOW ? pinResearchRunPolicy(configured) : null,
+                configured && env.RESEARCH_RUN_WORKFLOW
+                  ? pinResearchRunPolicy(
+                      configured,
+                      env.RESEARCH_AGENT_ENABLED === "true" ? "research-agent-v2" : "workflow-v1",
+                    )
+                  : null,
                 context.turnId,
               ),
             );

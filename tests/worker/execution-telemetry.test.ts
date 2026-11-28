@@ -162,6 +162,18 @@ void test("source failures expose a static stage without raw upstream errors", a
   assert.equal(attributes.get("voidnote.source_error_code"), "source_tls_failed");
 });
 
+void test("HTTP source diagnostics export bounded metadata without response content", async (t) => {
+  const { mf, bodies } = start(t);
+  const response = await mf.dispatchFetch("https://app.test/source-http-error");
+  assert.equal(response.status, 503);
+  const body = bodies[0]!;
+  assert.doesNotMatch(body, /PRIVATE response/);
+  const failure = spans(body).find((span) => span.name === "research.run.retrieve")!;
+  const attributes = new Map(failure.attributes.map(({ key, value }) => [key, value]));
+  assert.deepEqual(attributes.get("voidnote.source_http_status"), { intValue: "403" });
+  assert.deepEqual(attributes.get("voidnote.source_content_type"), { stringValue: "other" });
+});
+
 void test("WorkspaceError exposes only an allowlisted domain code", async (t) => {
   const { mf, bodies } = start(t);
   const response = await mf.dispatchFetch("https://app.test/workspace-error");

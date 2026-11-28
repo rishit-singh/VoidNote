@@ -1,7 +1,10 @@
+import { researchRunPolicySchema } from "../../../config/research-runs";
 import type { ResearchRunExecutionKey } from "../../../contracts/research/runs";
 import { createInferenceRepository } from "../../../db/inference";
 import { createResearchRunsRepository } from "../../../db/research/runs";
 import { createServiceBudgetRepository } from "../../../db/service-budgets";
+import { researchAgentName } from "../agent-identity";
+import { settleResearchAgentOperations } from "../agent-settlement";
 import {
   type ResearchRunEnvironment,
   withResearchRunDatabase as withJobDatabase,
@@ -15,6 +18,30 @@ export async function dispatchResearchRun(
   key: ResearchRunExecutionKey,
   cancel = false,
 ) {
+  const work = await withJobDatabase(env, (db) => createResearchRunsRepository(db).loadWork(key));
+
+  if (!work) {
+    return;
+  }
+
+  if (researchRunPolicySchema.parse(work.policy).executionVersion === "research-agent-v2") {
+    if (!env.RESEARCH_AGENT) {
+      throw new Error("Research Agent binding is unavailable.");
+    }
+
+    const agent = env.RESEARCH_AGENT.get(env.RESEARCH_AGENT.idFromName(researchAgentName(key)));
+
+    if (cancel || work.status === "cancelled") {
+      await agent.cancelResearchRun(key);
+    } else if (env.RESEARCH_AGENT_ENABLED === "true") {
+      await agent.startResearchRun(key);
+    } else {
+      await agent.reconcileResearchPublication();
+    }
+
+    return;
+  }
+
   const binding = env.RESEARCH_RUN_WORKFLOW;
 
   if (!binding) {
@@ -68,6 +95,8 @@ export async function dispatchResearchRun(
 }
 
 export async function reconcileResearchRuns(env: ResearchRunEnvironment, limit = 20) {
+  const agentSettlement = await settleResearchAgentOperations(env);
+
   const pending = await withJobDatabase(env, (db) =>
     createResearchRunsRepository(db).pendingDispatch(limit),
   );
@@ -116,6 +145,7 @@ export async function reconcileResearchRuns(env: ResearchRunEnvironment, limit =
   ]);
 
   return {
+    agentSettlement,
     attempted: pending.length,
     deferred: dispatchResults.filter((result) => result.status === "rejected").length,
     settlementAttempted: settled.length,

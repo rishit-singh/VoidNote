@@ -1,5 +1,12 @@
 # VoidNote engineering and agent workflow
 
+## Reviewable explanations and progress
+
+Use short outcomes, tiny flow diagrams and relevant code/contract snippets to
+make architectural changes reviewable. Link owning files; distinguish existing
+implementation from proposed pseudocode. Updates state actual evidence, blockers
+and the next action. Diagnostics and supporting tests are not full acceptance.
+
 ## Start here
 
 - Read the relevant source and current implementation notes before changing behavior.
@@ -127,6 +134,14 @@ target as already implemented.
 
 ## Verification and delivery
 
+- In this project, **testing** means verifying the requested end-to-end user
+  behavior in its intended deployed environment, with real authentication,
+  storage, enabled background providers, semantic quality, UX, notifications,
+  recovery, telemetry and usage checked as applicable. Unit, mocked, integration,
+  build and health checks are supporting evidence, not completion. A disabled
+  feature blocks acceptance: report the exact blockers rather than claiming it was
+  fully tested. Keep actual paid calls within existing authorization; never infer
+  or silently grant a new allowance.
 - Production delivery belongs to `.github/workflows/ci.yml`: checked pushes to
   `main` deploy the tested build, record its commit/Cloudflare version and run a
   health smoke test. PRs and manual workflow dispatch run checks only. Treat local

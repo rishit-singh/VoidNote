@@ -7,6 +7,8 @@ export type ResearchRunEnvironment = {
   AI?: Ai;
   FIRECRAWL_API_KEY?: string;
   RESEARCH_ENABLED?: string;
+  RESEARCH_AGENT_ENABLED?: string;
+  RESEARCH_AGENT?: Cloudflare.Env["RESEARCH_AGENT"];
   RESEARCH_DISCOVERY_ENABLED?: string;
   RESEARCH_RUN_WORKFLOW?: Workflow<ResearchRunExecutionKey>;
   LOGFIRE_TOKEN?: string;

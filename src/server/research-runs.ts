@@ -21,7 +21,10 @@ export async function requestResearchRun(principal: Principal, input: RequestRes
   const configured = readResearchPolicy(env);
   const policy =
     configured && env.RESEARCH_RUN_WORKFLOW && env.AI && env.HYPERDRIVE
-      ? pinResearchRunPolicy(configured)
+      ? pinResearchRunPolicy(
+          configured,
+          env.RESEARCH_AGENT_ENABLED === "true" ? "research-agent-v2" : "workflow-v1",
+        )
       : null;
   const run = await repository((repo) => repo.request(principal, input, policy));
 

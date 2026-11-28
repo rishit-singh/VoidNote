@@ -37,6 +37,7 @@
     "ASSISTANT_BUDGET_ID": "",
     "ASSISTANT_RATE_VERSION_ID": "",
     "RESEARCH_ENABLED": "false",
+    "RESEARCH_AGENT_ENABLED": "false",
     "RESEARCH_DISCOVERY_ENABLED": "false",
     "RESEARCH_SERVICE_BUDGET_ID": "",
     "RESEARCH_SEARCH_UNIT_BOUND": "",
@@ -64,6 +65,7 @@
     "bindings": [
       { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
       { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
+      { "name": "RESEARCH_AGENT", "class_name": "ResearchAgent" },
       { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
     ],
   },
@@ -71,6 +73,7 @@
     { "tag": "summary-agent-v1", "new_sqlite_classes": ["SummaryAgent"] },
     { "tag": "assistant-agent-v1", "new_sqlite_classes": ["AssistantAgent"] },
     { "tag": "activity-hub-v1", "new_sqlite_classes": ["ActivityHub"] },
+    { "tag": "research-agent-v1", "new_sqlite_classes": ["ResearchAgent"] },
   ],
   "r2_buckets": [{ "binding": "RECORDING_ARTIFACTS", "bucket_name": "voidnote-recordings-local" }],
   "workflows": [
@@ -122,6 +125,7 @@
         "ASSISTANT_BUDGET_ID": "",
         "ASSISTANT_RATE_VERSION_ID": "",
         "RESEARCH_ENABLED": "false",
+        "RESEARCH_AGENT_ENABLED": "false",
         "RESEARCH_DISCOVERY_ENABLED": "false",
         "RESEARCH_SERVICE_BUDGET_ID": "",
         "RESEARCH_SEARCH_UNIT_BOUND": "",
@@ -154,6 +158,7 @@
         "bindings": [
           { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
           { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
+          { "name": "RESEARCH_AGENT", "class_name": "ResearchAgent" },
           { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
         ],
       },
@@ -224,6 +229,7 @@
         "ASSISTANT_BUDGET_ID": "57902c45-79b9-4890-8975-8fe5d378a693",
         "ASSISTANT_RATE_VERSION_ID": "55f061b7-8ca4-442b-9b45-c862e3c401bb",
         "RESEARCH_ENABLED": "true",
+        "RESEARCH_AGENT_ENABLED": "true",
         "RESEARCH_DISCOVERY_ENABLED": "false",
         "RESEARCH_SERVICE_BUDGET_ID": "",
         "RESEARCH_SEARCH_UNIT_BOUND": "",
@@ -246,6 +252,7 @@
         "bindings": [
           { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
           { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
+          { "name": "RESEARCH_AGENT", "class_name": "ResearchAgent" },
           { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
         ],
       },
@@ -294,6 +301,7 @@
         "bindings": [
           { "name": "SUMMARY_AGENT", "class_name": "SummaryAgent" },
           { "name": "ASSISTANT_AGENT", "class_name": "AssistantAgent" },
+          { "name": "RESEARCH_AGENT", "class_name": "ResearchAgent" },
           { "name": "ACTIVITY_HUB", "class_name": "ActivityHub" },
         ],
       },
@@ -349,6 +357,7 @@
         "ASSISTANT_BUDGET_ID": "",
         "ASSISTANT_RATE_VERSION_ID": "",
         "RESEARCH_ENABLED": "false",
+        "RESEARCH_AGENT_ENABLED": "false",
         "RESEARCH_DISCOVERY_ENABLED": "false",
         "RESEARCH_SERVICE_BUDGET_ID": "",
         "RESEARCH_SEARCH_UNIT_BOUND": "",

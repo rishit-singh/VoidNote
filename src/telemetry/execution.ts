@@ -27,7 +27,7 @@ type Details = {
   stage?: string;
   promptVersion?: string;
   policyVersion?: string;
-  actorType?: "user" | "assistant" | "workflow" | "reconciliation";
+  actorType?: "user" | "assistant" | "agent" | "workflow" | "reconciliation";
   finishReason?: string;
   candidateCount?: number;
   selectedSourceCount?: number;
@@ -336,6 +336,15 @@ export async function executionTrace<T>(
       attributes.push(text("error.type", errorType(error)));
       if (error instanceof ResearchSourceError) {
         attributes.push(text("voidnote.source_error_code", error.code));
+        if (error.httpStatus !== undefined) {
+          attributes.push({
+            key: "voidnote.source_http_status",
+            value: { intValue: String(error.httpStatus) },
+          });
+        }
+        if (error.contentTypeCategory !== undefined) {
+          attributes.push(text("voidnote.source_content_type", error.contentTypeCategory));
+        }
       }
       if (error instanceof WorkspaceError && workspaceErrorCodes.has(error.code)) {
         attributes.push(text("voidnote.error.domain_code", error.code));

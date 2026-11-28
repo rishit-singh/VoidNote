@@ -1,6 +1,7 @@
 // Reverse dependency order for tables introduced by the assistant platform.
 // Callers may drop these only after their dedicated-empty-database ownership check.
 export const platformTables = [
+  "research_agent_operations",
   "research_run_finding_evidence",
   "research_run_findings",
   "research_run_sources",

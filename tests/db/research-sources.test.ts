@@ -9,6 +9,7 @@ import {
   ResearchSourceError,
   type PublicSourceTransport,
 } from "../../src/ai/research";
+import { parseResearchHttpResponse } from "../../src/ai/research/worker-transport";
 import { researchPolicySchema } from "../../src/config/research";
 
 const policy = researchPolicySchema.parse({
@@ -99,6 +100,89 @@ void describe("public research source boundary", () => {
         error.message === "Research source connection failed." &&
         error.cause === internalCause &&
         !error.message.includes("secret.invalid"),
+    );
+  });
+
+  void it("reports unsuccessful HTTP status separately and exposes only its numeric status", async () => {
+    const transport: PublicSourceTransport = {
+      resolve: () => Promise.resolve(["8.8.8.8"]),
+      request: () =>
+        Promise.resolve(
+          new Response("private upstream details", {
+            status: 503,
+            headers: { "content-type": "text/plain" },
+          }),
+        ),
+    };
+
+    await assert.rejects(
+      createPublicUrlResearchProvider(transport).retrieve(
+        "https://public.org/ada",
+        policy,
+        AbortSignal.timeout(1000),
+      ),
+      (error: unknown) =>
+        error instanceof ResearchSourceError &&
+        error.code === "source_http_status_failed" &&
+        error.httpStatus === 503 &&
+        error.contentTypeCategory === "expected" &&
+        error.message === "Research source returned an unsuccessful HTTP status." &&
+        !error.message.includes("private upstream details"),
+    );
+  });
+
+  void it("categorizes missing and unsupported content types without retaining their values", async () => {
+    for (const input of [
+      { headers: undefined, category: "missing" },
+      { headers: { "content-type": "application/x-private-provider-type" }, category: "other" },
+    ] as const) {
+      const transport: PublicSourceTransport = {
+        resolve: () => Promise.resolve(["8.8.8.8"]),
+        request: () =>
+          Promise.resolve(
+            new Response(
+              new Uint8Array([1, 2, 3]),
+              input.headers ? { headers: input.headers } : {},
+            ),
+          ),
+      };
+
+      await assert.rejects(
+        createPublicUrlResearchProvider(transport).retrieve(
+          "https://public.org/ada",
+          policy,
+          AbortSignal.timeout(1000),
+        ),
+        (error: unknown) =>
+          error instanceof ResearchSourceError &&
+          error.code === "source_content_type_unsupported" &&
+          error.contentTypeCategory === input.category &&
+          error.message === "Research source content type is unsupported." &&
+          !error.message.includes("private"),
+      );
+    }
+  });
+
+  void it("classifies malformed HTTP framing separately from response bodies", () => {
+    assert.throws(
+      () =>
+        parseResearchHttpResponse(
+          new TextEncoder().encode(
+            "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nContent-Length: 3\r\n\r\nAda",
+          ),
+          1000,
+        ),
+      (error: unknown) =>
+        error instanceof ResearchSourceError && error.code === "source_http_framing_invalid",
+    );
+    assert.throws(
+      () =>
+        parseResearchHttpResponse(
+          new TextEncoder().encode("HTTP/1.1 200 OK\r\nX-Invalid: \u0000\r\n\r\n"),
+          1000,
+        ),
+      (error: unknown) =>
+        error instanceof ResearchSourceError && error.code === "source_http_framing_invalid",
     );
   });
 
@@ -247,7 +331,9 @@ void describe("public research source boundary", () => {
         AbortSignal.timeout(1000),
       ),
       (error: unknown) =>
-        error instanceof ResearchSourceError && error.code === "source_http_failed",
+        error instanceof ResearchSourceError &&
+        error.code === "source_redirect_invalid" &&
+        error.httpStatus === 302,
     );
     assert.equal(calls, 4);
     transport.resolve = () => Promise.resolve(["8.8.8.8", "10.0.0.1"]);

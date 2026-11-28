@@ -148,6 +148,13 @@
       "when": 1795821316811,
       "tag": "0020_research-evidence-v2",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795881481276,
+      "tag": "0021_research_agent_operations",
+      "breakpoints": true
     }
   ]
 }

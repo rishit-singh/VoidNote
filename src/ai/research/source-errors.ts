@@ -5,10 +5,18 @@ export type ResearchSourceErrorCode =
   | "source_tls_failed"
   | "source_write_failed"
   | "source_read_failed"
-  | "source_http_failed"
+  | "source_http_status_failed"
+  | "source_content_type_unsupported"
+  | "source_redirect_invalid"
+  | "source_http_framing_invalid"
   | "source_body_failed"
   | "source_extract_failed"
   | "source_policy_invalid";
+
+export type ResearchSourceErrorMetadata = {
+  httpStatus?: number;
+  contentTypeCategory?: "expected" | "missing" | "other";
+};
 
 const messages: Record<ResearchSourceErrorCode, string> = {
   source_dns_lookup_failed: "Research source DNS lookup failed.",
@@ -17,7 +25,10 @@ const messages: Record<ResearchSourceErrorCode, string> = {
   source_tls_failed: "Research source TLS verification failed.",
   source_write_failed: "Research source request write failed.",
   source_read_failed: "Research source response read failed.",
-  source_http_failed: "Research source HTTP response was invalid.",
+  source_http_status_failed: "Research source returned an unsuccessful HTTP status.",
+  source_content_type_unsupported: "Research source content type is unsupported.",
+  source_redirect_invalid: "Research source redirect was invalid.",
+  source_http_framing_invalid: "Research source HTTP framing was invalid.",
   source_body_failed: "Research source response body was invalid.",
   source_extract_failed: "Research source text extraction failed.",
   source_policy_invalid: "Research source retrieval policy was invalid.",
@@ -26,17 +37,44 @@ const messages: Record<ResearchSourceErrorCode, string> = {
 /** Safe, stable diagnostic category; `cause` is retained only for internal handling. */
 export class ResearchSourceError extends Error {
   readonly code: ResearchSourceErrorCode;
+  readonly httpStatus?: number;
+  readonly contentTypeCategory?: "expected" | "missing" | "other";
 
-  constructor(code: ResearchSourceErrorCode, cause?: unknown) {
+  constructor(
+    code: ResearchSourceErrorCode,
+    cause?: unknown,
+    metadata?: ResearchSourceErrorMetadata,
+  ) {
     super(messages[code], cause === undefined ? undefined : { cause });
     this.name = "ResearchSourceError";
     this.code = code;
+    const httpStatus = metadata?.httpStatus;
+
+    if (
+      httpStatus !== undefined &&
+      Number.isInteger(httpStatus) &&
+      httpStatus >= 100 &&
+      httpStatus <= 599
+    ) {
+      this.httpStatus = httpStatus;
+    }
+
+    if (
+      metadata?.contentTypeCategory === "expected" ||
+      metadata?.contentTypeCategory === "missing" ||
+      metadata?.contentTypeCategory === "other"
+    ) {
+      this.contentTypeCategory = metadata.contentTypeCategory;
+    }
   }
 }
 
 export function researchSourceError(
   code: ResearchSourceErrorCode,
   cause?: unknown,
+  metadata?: ResearchSourceErrorMetadata,
 ): ResearchSourceError {
-  return cause instanceof ResearchSourceError ? cause : new ResearchSourceError(code, cause);
+  return cause instanceof ResearchSourceError
+    ? cause
+    : new ResearchSourceError(code, cause, metadata);
 }

@@ -4,6 +4,8 @@ import type { ResearchPolicy } from "../../config/research";
 import type { ResearchSource, SourceResearchProvider } from "./ports";
 import { ResearchSourceError, researchSourceError } from "./source-errors";
 
+const SUPPORTED_SOURCE_CONTENT_TYPES = new Set(["text/plain", "text/html", "text/markdown"]);
+
 /** Transport must connect to exactly one of these validated addresses, retaining
  * the URL hostname for TLS verification. Ordinary fetch(url) is NOT an adapter. */
 export interface PublicSourceTransport {
@@ -176,7 +178,7 @@ export function createPublicUrlResearchProvider(
         signal.throwIfAborted();
 
         if (seen.has(url.href)) {
-          throw new ResearchSourceError("source_http_failed");
+          throw new ResearchSourceError("source_redirect_invalid");
         }
 
         seen.add(url.href);
@@ -215,26 +217,67 @@ export function createPublicUrlResearchProvider(
         if ([301, 302, 303, 307, 308].includes(response.status)) {
           const location = response.headers.get("location");
 
-          await response.body?.cancel();
+          void response.body?.cancel().catch(() => undefined);
 
           if (!location || redirects === policy.maxRedirects) {
-            throw new ResearchSourceError("source_http_failed");
+            throw new ResearchSourceError("source_redirect_invalid", undefined, {
+              httpStatus: response.status,
+            });
           }
 
           try {
-            url = publicResearchUrl(new URL(location, url).href);
+            const redirectUrl = publicResearchUrl(new URL(location, url).href);
+
+            if (seen.has(redirectUrl.href)) {
+              throw new ResearchSourceError("source_redirect_invalid", undefined, {
+                httpStatus: response.status,
+              });
+            }
+
+            url = redirectUrl;
           } catch (error) {
-            throw researchSourceError("source_http_failed", error);
+            if (error instanceof ResearchSourceError) {
+              throw error;
+            }
+
+            throw researchSourceError("source_redirect_invalid", error, {
+              httpStatus: response.status,
+            });
           }
 
           continue;
         }
 
-        const type = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+        const rawContentType = response.headers.get("content-type");
 
-        if (!response.ok || !type || !["text/plain", "text/html", "text/markdown"].includes(type)) {
-          await response.body?.cancel();
-          throw new ResearchSourceError("source_http_failed");
+        const type = rawContentType?.split(";")[0]?.trim().toLowerCase();
+
+        const contentTypeCategory = !type
+          ? "missing"
+          : SUPPORTED_SOURCE_CONTENT_TYPES.has(type)
+            ? "expected"
+            : "other";
+
+        if (!response.ok) {
+          void response.body?.cancel().catch(() => undefined);
+          throw new ResearchSourceError("source_http_status_failed", undefined, {
+            httpStatus: response.status,
+            contentTypeCategory,
+          });
+        }
+
+        if (contentTypeCategory === "missing") {
+          void response.body?.cancel().catch(() => undefined);
+          throw new ResearchSourceError("source_content_type_unsupported", undefined, {
+            contentTypeCategory: "missing",
+          });
+        }
+
+        if (contentTypeCategory === "other" || !type) {
+          void response.body?.cancel().catch(() => undefined);
+          throw new ResearchSourceError("source_content_type_unsupported", undefined, {
+            contentTypeCategory: "other",
+          });
         }
 
         let body: string;
@@ -275,7 +318,7 @@ export function createPublicUrlResearchProvider(
         };
       }
 
-      throw new ResearchSourceError("source_http_failed");
+      throw new ResearchSourceError("source_redirect_invalid");
     },
   };
 }

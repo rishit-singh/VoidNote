@@ -9,6 +9,8 @@ import type {
   ResearchAgentServices,
 } from "../../src/ai/research/agent/services";
 import { researchRunPolicySchema } from "../../src/config/research-runs";
+import { observeScopedInferenceUsage } from "../../src/ai/inference/scoped-usage";
+import { requestInferenceStreamUsage } from "../../src/ai/inference/stream-usage";
 
 const workspaceId = "10000000-0000-4000-8000-000000000001";
 const runId = "10000000-0000-4000-8000-000000000002";
@@ -41,7 +43,7 @@ export class ResearchAgent extends ApplicationResearchAgent {
   }
 
   override getAIBinding(): Ai {
-    return {
+    const binding = {
       async run(_model: unknown, params: unknown) {
         const response = await fetch("https://research-agent-service.test/model", {
           method: "POST",
@@ -80,6 +82,12 @@ export class ResearchAgent extends ApplicationResearchAgent {
         });
       },
     } as unknown as Ai;
+
+    return observeScopedInferenceUsage(
+      requestInferenceStreamUsage(binding),
+      () => this.currentResearchModelRequest(),
+      async () => {},
+    );
   }
 
   async inspectFixture() {

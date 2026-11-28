@@ -184,7 +184,7 @@ test("research result keeps its last saved report visible when a refresh fails",
   await expect(page.getByText("Showing the last saved research")).toHaveCount(0);
 });
 
-test("an existing assistant thread links its research task to the saved report", async ({
+test("an assistant thread shows its research task even without a note association", async ({
   page,
   workspace,
 }) => {
@@ -196,7 +196,7 @@ test("an existing assistant thread links its research task to the saved report",
     createdAt: timestamp,
     updatedAt: timestamp,
   };
-  const task = researchRunDetailSchema.parse({ ...run("running"), noteId: note.id });
+  const task = researchRunDetailSchema.parse({ ...run("running"), noteId: null });
   const assistantScope = assistantScopeSchema.extend({ noteId: z.uuid().optional() }).strict();
   const ok = (route: Route, data: unknown) => route.fulfill({ json: { result: { data } } });
 
@@ -257,7 +257,6 @@ test("an existing assistant thread links its research task to the saved report",
       .parse(JSON.parse(url.searchParams.get("input") ?? "{}"));
     expect(input).toEqual({
       workspaceId,
-      noteId: note.id,
       threadId: thread.id,
       status: "all",
       limit: 6,

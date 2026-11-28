@@ -315,16 +315,13 @@ function ScopedResearchRunPanel({ workspaceId, runId }: { workspaceId: string; r
 export function ResearchRunTasks({
   workspaceId,
   threadId,
-  noteId,
 }: {
   workspaceId: string;
   threadId: string;
-  noteId: string;
 }) {
   const query = useQuery(
     researchRunListQueryOptions(workspaceId, {
       threadId,
-      noteId,
       status: "all",
       limit: 6,
     }),

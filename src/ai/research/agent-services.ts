@@ -24,7 +24,8 @@ export function createResearchAgentServices(env: ResearchRunEnvironment): Resear
     const policy = researchRunPolicySchema.parse(work.policy);
 
     const scope = researchAgentScopeSchema.parse({
-      ...key,
+      workspaceId: key.workspaceId,
+      runId: key.runId,
       actorId: work.actorId,
       operationId: key.runId,
       question: work.input.question,

@@ -2,7 +2,9 @@
 
 ## Current status
 
-Implemented locally; not deployed or accepted with real providers yet.
+Deployed to isolated staging as `a27b9e0` through CI `46165903871`
+(Worker version `9d86464a-f20c-4fed-99fd-06663151ccc4`).
+Real-provider acceptance remains incomplete.
 The approved November 28 replan replaces the fixed research pipeline for new
 agent-version runs. Existing Workflow runs keep their pinned execution owner.
 
@@ -69,6 +71,19 @@ existing source/context limits. Missing execution version means `workflow-v1`;
   eligibility and citation checks.
 
 ## Remaining acceptance
+
+The first hosted browser attempt dispatched a native run but failed before
+research inference. Persisted Think logs identified strict scope parsing rejecting
+the admission-only `requestId` and `inputTokenBound` fields. The service boundary
+now explicitly selects run identity; its isolated Postgres regression exercises
+real inference admission, budget reservation and rejection of repeated submission.
+This correction is pending staging delivery.
+
+The originating conversation also hid the task because it additionally filtered
+by the run's optional note association. The task list now uses conversation scope
+alone; its browser regression covers a run without a note association.
+At this failed attempt, recorded assistant spend was $0.091005, research spend
+was zero and no inference holds remained.
 
 Real hosted browser delegation, model-directed follow-up, verified claims and
 citations, reload, evidence reuse, cancellation, notifications, traces and usage

@@ -428,9 +428,7 @@ function ScopedAssistantPanel({
                 onArtifact={setArtifactId}
               />
             )}
-            {verifiedThread && (
-              <ResearchRunTasks workspaceId={workspaceId} threadId={threadId} noteId={noteId} />
-            )}
+            {verifiedThread && <ResearchRunTasks workspaceId={workspaceId} threadId={threadId} />}
             {availability.data && !availability.data.enabled && (
               <Alert>
                 <AlertDescription>

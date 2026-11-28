@@ -5,6 +5,8 @@ import { after, before, test } from "node:test";
 import { createResearchAgentServices } from "../../src/ai/research/agent-services";
 import type { ResearchRunEnvironment } from "../../src/ai/research/runs/environment";
 import { pinResearchRunPolicy } from "../../src/config/research-runs";
+import { createInferenceRepository } from "../../src/db/inference";
+import { inferenceBudgets, inferenceRates } from "../../src/db/inference-schema";
 import { createResearchRunsRepository } from "../../src/db/research/runs";
 import { db, setupDatabase, teardownDatabase, workspace } from "./fixture";
 
@@ -60,6 +62,29 @@ void test("real service adapters revise draft findings, publish cited evidence, 
   const services = createResearchAgentServices(env);
   assert.equal(await services.beginRun(key), true);
   const { scope } = await services.execution(key);
+  await db.insert(inferenceRates).values({
+    id: policy.rateVersionId,
+    provider: "workers-ai",
+    model: policy.model,
+    currency: "USD",
+    inputMicroUsdPerMillionTokens: 1_000_000,
+    outputMicroUsdPerMillionTokens: 1_000_000,
+  });
+  await db.insert(inferenceBudgets).values({
+    workspaceId: member.workspaceId,
+    id: policy.budgetId,
+    rateVersionId: policy.rateVersionId,
+    limitMicroUsd: 100_000,
+    approvedAt: new Date(),
+  });
+  const admission = { ...scope, requestId: randomUUID(), inputTokenBound: 100 };
+  await services.admitModelRequest(admission, policy);
+  const availability = await createInferenceRepository(db).getBudgetAvailability({
+    workspaceId: member.workspaceId,
+    budgetId: policy.budgetId,
+  });
+  assert.equal(availability?.reservedMicroUsd, 100 + policy.maxOutputTokens);
+  await assert.rejects(services.admitModelRequest(admission, policy), /cannot be resubmitted/);
   const questionId = scope.questions[0]!.id;
   const draft = {
     questionId,

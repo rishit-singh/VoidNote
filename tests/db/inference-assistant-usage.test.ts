@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createRequire, isBuiltin } from "node:module";
 import { before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { compileFunction } from "node:vm";
@@ -16,6 +17,7 @@ type RuntimeConstructor = new () => Runtime;
 
 const model = "@cf/deepseek-ai/deepseek-v4.1-flash-1017";
 const scope: Scope = { workspaceId: "workspace-a", requestId: "request-a" };
+const requireBuiltin = createRequire(import.meta.url);
 let source: string;
 
 before(async () => {
@@ -56,6 +58,7 @@ function fixture(raw: Ai) {
     require: (name: string) => unknown,
   ) => void;
   evaluate(fixtureModule, fixtureModule.exports, (name: string) => {
+    if (isBuiltin(name)) return requireBuiltin(name) as unknown;
     if (name !== "./assistant") return {};
 
     return {
@@ -74,7 +77,7 @@ function fixture(raw: Ai) {
         }
         currentAssistantModelRequest() {
           assert.ok(current, "capture must happen before the request, not after stream completion");
-          return { ...current };
+          return { ...current, policy: { model } };
         }
         schedule(...args: unknown[]) {
           schedules.push(args);

@@ -163,27 +163,38 @@ void describe("public research source boundary", () => {
     }
   });
 
-  void it("classifies malformed HTTP framing separately from response bodies", () => {
-    assert.throws(
-      () =>
-        parseResearchHttpResponse(
-          new TextEncoder().encode(
-            "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nContent-Length: 3\r\n\r\nAda",
-          ),
-          1000,
-        ),
-      (error: unknown) =>
-        error instanceof ResearchSourceError && error.code === "source_http_framing_invalid",
-    );
-    assert.throws(
-      () =>
-        parseResearchHttpResponse(
-          new TextEncoder().encode("HTTP/1.1 200 OK\r\nX-Invalid: \u0000\r\n\r\n"),
-          1000,
-        ),
-      (error: unknown) =>
-        error instanceof ResearchSourceError && error.code === "source_http_framing_invalid",
-    );
+  void it("reports bounded framing reasons without retaining response details", () => {
+    const cases = [
+      {
+        response: "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nContent-Length: 3\r\n\r\nAda",
+        reason: "duplicate_framing_header",
+      },
+      {
+        response: "HTTP/1.1 200 OK\r\nX-Invalid: \u0000\r\n\r\n",
+        reason: "header_line_invalid",
+      },
+      {
+        response: "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nAda",
+        reason: "content_length_invalid",
+      },
+      {
+        response:
+          "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nX-Secret: value\r\n\r\n",
+        reason: "chunk_trailer_invalid",
+      },
+    ] as const;
+
+    for (const { response, reason } of cases) {
+      assert.throws(
+        () => parseResearchHttpResponse(new TextEncoder().encode(response), 1000),
+        (error: unknown) =>
+          error instanceof ResearchSourceError &&
+          error.code === "source_http_framing_invalid" &&
+          error.framingReason === reason &&
+          !error.message.includes("X-Secret") &&
+          !error.message.includes("value"),
+      );
+    }
   });
 
   void it("passes resolved public addresses to the pinned transport and saves exact text lineage", async () => {

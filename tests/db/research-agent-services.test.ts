@@ -146,3 +146,104 @@ void test("real service adapters revise draft findings, publish cited evidence, 
   assert.equal(saved.report?.answer, text);
   assert.equal(saved.report?.findings[0]?.citations[0]?.excerpt, text);
 });
+
+void test("real service publishes an honest four-question report without retrieved evidence", async () => {
+  const connectionString = process.env.TEST_DATABASE_URL!;
+  const url = new URL(connectionString);
+  const env: ResearchRunEnvironment = {
+    RESEARCH_ENABLED: "true",
+    RESEARCH_AGENT_ENABLED: "true",
+    HYPERDRIVE: {
+      connectionString,
+      host: url.hostname,
+      ip: "127.0.0.1",
+      port: Number(url.port || 5432),
+      user: url.username,
+      password: url.password,
+      database: url.pathname.slice(1),
+      connect() {
+        throw new Error("This test uses the Postgres connection-string adapter.");
+      },
+    },
+  };
+  const member = await workspace();
+  const runs = createResearchRunsRepository(db);
+  const policy = pinResearchRunPolicy(
+    {
+      version: "research-v1",
+      promptVersion: "research-extract-v2",
+      provider: "workers-ai",
+      model: "isolated-test-model",
+      budgetId: randomUUID(),
+      rateVersionId: randomUUID(),
+    },
+    "research-agent-v2",
+  );
+  const run = await runs.request(
+    member.principal,
+    {
+      workspaceId: member.workspaceId,
+      commandId: randomUUID(),
+      question: "Investigate the program status and evidence limits.",
+      subquestions: [
+        "What is the latest status?",
+        "What evidence supports it?",
+        "What remains uncertain?",
+      ],
+      sourceUrls: ["https://example.org/unavailable-primary"],
+      discoverSources: false,
+    },
+    policy,
+  );
+  const key = { workspaceId: member.workspaceId, runId: run.id };
+  const services = createResearchAgentServices(env);
+  assert.equal(await services.beginRun(key), true);
+  const { scope } = await services.execution(key);
+  assert.equal(scope.questions.length, 4);
+
+  const report = {
+    answer: "The available evidence was insufficient to establish the requested facts.",
+    quality: "insufficient-evidence" as const,
+    stopReason: "insufficient-evidence" as const,
+    gaps: ["The attempted source retrieval failed, so no supporting evidence is available."],
+    findings: scope.questions.map((question) => ({
+      questionId: question.id,
+      outcome: "insufficient-evidence" as const,
+      statement: null,
+      classification: null,
+      explanation: `No retrieved source established an answer for: ${question.question}`,
+      citations: [],
+    })),
+  };
+  const failedDraft = {
+    ...report,
+    findings: report.findings.map((finding, index) => ({
+      ...finding,
+      outcome: index < 3 ? ("failed" as const) : finding.outcome,
+      explanation:
+        index < 3
+          ? "The source retrieval failed before this question could be established."
+          : finding.explanation,
+    })),
+  };
+  const rejected = await services.publishReport(scope, failedDraft, randomUUID());
+  assert.deepEqual(rejected, {
+    published: false,
+    reason: "invalid-citations",
+    feedback: "Unresolved questions require an explained insufficient-evidence finding.",
+  });
+
+  const operationId = randomUUID();
+
+  assert.deepEqual(await services.publishReport(scope, report, operationId), {
+    published: true,
+    receiptId: operationId,
+  });
+
+  const saved = await runs.get(member.principal, member.workspaceId, run.id);
+  assert.equal(saved.status, "completed");
+  assert.equal(saved.report?.quality, "insufficient-evidence");
+  assert.equal(saved.report?.findings.length, 4);
+  assert.ok(saved.report?.findings.every((finding) => finding.citations.length === 0));
+  assert.equal(saved.report?.gaps[0], report.gaps[0]);
+});

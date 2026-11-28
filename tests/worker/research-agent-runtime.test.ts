@@ -18,8 +18,13 @@ const fixtureScope = {
   runId,
   actorId: "10000000-0000-4000-8000-000000000003",
   operationId: "accepted-operation",
-  question: "Investigate the latest status.",
-  questions: [{ id: "10000000-0000-4000-8000-000000000004", question: "Latest status" }],
+  question: "Investigate the latest status across the four admitted questions.",
+  questions: [
+    { id: "10000000-0000-4000-8000-000000000004", question: "Latest status" },
+    { id: "10000000-0000-4000-8000-000000000007", question: "What evidence supports it?" },
+    { id: "10000000-0000-4000-8000-000000000008", question: "What remains uncertain?" },
+    { id: "10000000-0000-4000-8000-000000000009", question: "What is the next milestone?" },
+  ],
   noteId: null,
   personId: null,
   sourceUrls: [],
@@ -80,6 +85,7 @@ function startWorker(
     evidenceBudget?: boolean;
     parallelUncertainTools?: boolean;
     throwFirstTool?: boolean;
+    insufficientEvidenceRepair?: boolean;
   } = {},
 ) {
   const modelCalls: unknown[] = [];
@@ -114,6 +120,133 @@ function startWorker(
       }
 
       const transcript = JSON.stringify(params);
+      if (options.insufficientEvidenceRepair && modelOrdinal === 1) {
+        return Response.json({
+          tool: {
+            name: "record_findings",
+            id: "tool-record-failed-findings",
+            input: {
+              findings: [
+                {
+                  questionId: "10000000-0000-4000-8000-000000000004",
+                  outcome: "failed",
+                  statement: null,
+                  classification: null,
+                  explanation: "The source could not be retrieved.",
+                  citations: [],
+                },
+                {
+                  questionId: "10000000-0000-4000-8000-000000000007",
+                  outcome: "failed",
+                  statement: null,
+                  classification: null,
+                  explanation: "The source could not be retrieved.",
+                  citations: [],
+                },
+                {
+                  questionId: "10000000-0000-4000-8000-000000000008",
+                  outcome: "failed",
+                  statement: null,
+                  classification: null,
+                  explanation: "The source could not be retrieved.",
+                  citations: [],
+                },
+                {
+                  questionId: "10000000-0000-4000-8000-000000000009",
+                  outcome: "insufficient-evidence",
+                  statement: null,
+                  classification: null,
+                  explanation: "No retrievable source established this milestone.",
+                  citations: [],
+                },
+              ],
+              gaps: ["The source retrieval failed, so the claims remain unverified."],
+            },
+          },
+        });
+      }
+      if (options.insufficientEvidenceRepair && modelOrdinal === 2) {
+        return Response.json({
+          tool: {
+            name: "publish_report",
+            id: "tool-publish-failed-findings",
+            input: {
+              answer:
+                "The research could not verify the admitted questions because retrieval failed.",
+              quality: "insufficient-evidence",
+              findings: [
+                {
+                  questionId: "10000000-0000-4000-8000-000000000004",
+                  outcome: "failed",
+                  statement: null,
+                  classification: null,
+                  explanation: "The source could not be retrieved.",
+                  citations: [],
+                },
+                {
+                  questionId: "10000000-0000-4000-8000-000000000007",
+                  outcome: "failed",
+                  statement: null,
+                  classification: null,
+                  explanation: "The source could not be retrieved.",
+                  citations: [],
+                },
+                {
+                  questionId: "10000000-0000-4000-8000-000000000008",
+                  outcome: "failed",
+                  statement: null,
+                  classification: null,
+                  explanation: "The source could not be retrieved.",
+                  citations: [],
+                },
+                {
+                  questionId: "10000000-0000-4000-8000-000000000009",
+                  outcome: "insufficient-evidence",
+                  statement: null,
+                  classification: null,
+                  explanation: "No retrievable source established this milestone.",
+                  citations: [],
+                },
+              ],
+              gaps: ["The source retrieval failed, so the claims remain unverified."],
+              stopReason: "insufficient-evidence",
+            },
+          },
+        });
+      }
+      if (options.insufficientEvidenceRepair && modelOrdinal === 3) {
+        return Response.json({
+          tool: {
+            name: "publish_report",
+            id: "tool-publish-insufficient-report",
+            input: {
+              answer:
+                "The research could not verify the admitted questions because retrieval failed.",
+              quality: "insufficient-evidence",
+              findings: [
+                "Latest status",
+                "What evidence supports it?",
+                "What remains uncertain?",
+                "What is the next milestone?",
+              ].map((question, index) => ({
+                questionId: [
+                  "10000000-0000-4000-8000-000000000004",
+                  "10000000-0000-4000-8000-000000000007",
+                  "10000000-0000-4000-8000-000000000008",
+                  "10000000-0000-4000-8000-000000000009",
+                ][index],
+                outcome: "insufficient-evidence",
+                statement: null,
+                classification: null,
+                explanation: `No retrievable source established: ${question}`,
+                citations: [],
+              })),
+              gaps: ["The source retrieval failed, so the claims remain unverified."],
+              stopReason: "insufficient-evidence",
+            },
+          },
+        });
+      }
       if (options.parallelUncertainTools) {
         return Response.json(
           modelOrdinal === 1
@@ -247,6 +380,13 @@ function startWorker(
         publications.push(args);
         publishAttempts += 1;
         firstPublicationStarted.resolve();
+        if (options.insufficientEvidenceRepair && publishAttempts === 1) {
+          return Response.json({
+            published: false,
+            reason: "invalid-citations",
+            feedback: "Unresolved questions require an explained insufficient-evidence finding.",
+          });
+        }
         if (options.throwFirstPublication && publishAttempts === 1) {
           return new Response("Publication acknowledgement unavailable.", { status: 503 });
         }
@@ -428,6 +568,66 @@ void test(
     assert.ok(overBudgetTurn.includes("evidence-budget-exhausted"));
     assert.equal(overBudgetTurn.split("e".repeat(3_000)).length - 1, 1);
     assert.equal(worker.publications.length, 1);
+  },
+);
+
+void test(
+  "bounded publication feedback repairs failed findings into an honest four-question insufficiency report",
+  { timeout: 30_000 },
+  async (t) => {
+    const worker = startWorker(t, { insufficientEvidenceRepair: true });
+    await worker.dispatch("/start");
+    const inspected = await worker.settled();
+
+    assert.equal(inspected.submissions[0]?.status, "completed");
+    assert.equal(inspected.state.publicationReceiptId, "fixture-publication-receipt");
+    assert.equal(worker.modelCalls.length, 3);
+    assert.equal(worker.publications.length, 2);
+
+    const rejected = worker.publications[0] as [
+      unknown,
+      {
+        findings: Array<{ outcome: string; citations: unknown[] }>;
+      },
+    ];
+    assert.deepEqual(
+      rejected[1].findings.map(({ outcome }) => outcome),
+      ["failed", "failed", "failed", "insufficient-evidence"],
+    );
+
+    const corrected = worker.publications[1] as [
+      unknown,
+      {
+        quality: string;
+        findings: Array<{ outcome: string; explanation: string; citations: unknown[] }>;
+        gaps: string[];
+        stopReason: string;
+      },
+    ];
+    assert.equal(corrected[1].quality, "insufficient-evidence");
+    assert.equal(corrected[1].stopReason, "insufficient-evidence");
+    assert.deepEqual(
+      corrected[1].findings.map(({ outcome }) => outcome),
+      [
+        "insufficient-evidence",
+        "insufficient-evidence",
+        "insufficient-evidence",
+        "insufficient-evidence",
+      ],
+    );
+    assert.ok(
+      corrected[1].findings.every(
+        ({ explanation, citations }) => explanation && citations.length === 0,
+      ),
+    );
+    assert.deepEqual(corrected[1].gaps, [
+      "The source retrieval failed, so the claims remain unverified.",
+    ]);
+    assert.ok(
+      JSON.stringify(worker.modelCalls[2]).includes(
+        "Unresolved questions require an explained insufficient-evidence finding.",
+      ),
+    );
   },
 );
 

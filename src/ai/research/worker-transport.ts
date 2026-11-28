@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 import { DEFAULT_RESEARCH_MAX_RESPONSE_BYTES } from "../../config/research";
-import { ResearchSourceError, researchSourceError } from "./source-errors";
+import {
+  type ResearchHttpFramingReason,
+  ResearchSourceError,
+  researchSourceError,
+} from "./source-errors";
 import {
   isPublicResearchAddress,
   type PublicSourceTransport,
@@ -9,6 +13,10 @@ import {
 } from "./sources";
 
 const HEADER_BYTES = 16_384;
+
+function invalidFraming(framingReason: ResearchHttpFramingReason): ResearchSourceError {
+  return new ResearchSourceError("source_http_framing_invalid", undefined, { framingReason });
+}
 
 const dnsResponseSchema = z.object({
   Status: z.literal(0),
@@ -25,8 +33,12 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
 
   const separator = wire.indexOf("\r\n\r\n");
 
-  if (separator < 0 || separator > HEADER_BYTES) {
-    throw new ResearchSourceError("source_http_framing_invalid");
+  if (separator < 0) {
+    throw invalidFraming("header_terminator_missing");
+  }
+
+  if (separator > HEADER_BYTES) {
+    throw invalidFraming("header_too_large");
   }
 
   const lines = wire.slice(0, separator).split("\r\n");
@@ -34,7 +46,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
   const status = /^HTTP\/1\.[01] (\d{3})(?: |$)/.exec(lines.shift() ?? "");
 
   if (!status) {
-    throw new ResearchSourceError("source_http_framing_invalid");
+    throw invalidFraming("status_line_invalid");
   }
 
   const headers = new Headers();
@@ -43,13 +55,13 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
     const match = /^([!#$%&'*+.^_`|~0-9A-Za-z-]+):[ \t]*(.*)$/.exec(line);
 
     if (!match?.[1] || match[2] === undefined) {
-      throw new ResearchSourceError("source_http_framing_invalid");
+      throw invalidFraming("header_line_invalid");
     }
 
     const name = match[1].toLowerCase();
 
     if ((name === "content-length" || name === "transfer-encoding") && headers.has(name)) {
-      throw new ResearchSourceError("source_http_framing_invalid");
+      throw invalidFraming("duplicate_framing_header");
     }
 
     // Cookies are neither sent nor persisted.
@@ -57,7 +69,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
       try {
         headers.append(name, match[2]);
       } catch {
-        throw new ResearchSourceError("source_http_framing_invalid");
+        throw invalidFraming("header_line_invalid");
       }
     }
   }
@@ -73,14 +85,14 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
   const length = headers.get("content-length");
 
   if (transfer && length) {
-    throw new ResearchSourceError("source_http_framing_invalid");
+    throw invalidFraming("transfer_and_content_length");
   }
 
   let body = bytes.slice(separator + 4);
 
   if (transfer) {
     if (transfer.toLowerCase() !== "chunked") {
-      throw new ResearchSourceError("source_http_framing_invalid");
+      throw invalidFraming("transfer_coding_unsupported");
     }
 
     const chunks: Uint8Array[] = [];
@@ -95,13 +107,13 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
       const lineEnd = body.indexOf(13, offset);
 
       if (lineEnd < 0 || body[lineEnd + 1] !== 10 || lineEnd - offset > 100) {
-        throw new ResearchSourceError("source_http_framing_invalid");
+        throw invalidFraming("chunk_size_invalid");
       }
 
       const hex = new TextDecoder().decode(body.slice(offset, lineEnd)).split(";")[0] ?? "";
 
       if (!/^[0-9a-fA-F]{1,8}$/.test(hex)) {
-        throw new ResearchSourceError("source_http_framing_invalid");
+        throw invalidFraming("chunk_size_invalid");
       }
 
       const chunkSize = parseInt(hex, 16);
@@ -110,7 +122,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
 
       if (chunkSize === 0) {
         if (body[offset] !== 13 || body[offset + 1] !== 10 || offset + 2 !== body.length) {
-          throw new ResearchSourceError("source_http_framing_invalid");
+          throw invalidFraming("chunk_trailer_invalid");
         }
 
         terminated = true;
@@ -128,7 +140,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
         body[offset + chunkSize] !== 13 ||
         body[offset + chunkSize + 1] !== 10
       ) {
-        throw new ResearchSourceError("source_http_framing_invalid");
+        throw invalidFraming("chunk_terminator_invalid");
       }
 
       chunks.push(body.slice(offset, offset + chunkSize));
@@ -136,7 +148,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
     }
 
     if (!terminated) {
-      throw new ResearchSourceError("source_http_framing_invalid");
+      throw invalidFraming("chunked_termination_missing");
     }
 
     body = new Uint8Array(size);
@@ -149,7 +161,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
 
     headers.delete("transfer-encoding");
   } else if (length && (!/^\d+$/.test(length) || Number(length) !== body.length)) {
-    throw new ResearchSourceError("source_http_framing_invalid");
+    throw invalidFraming("content_length_invalid");
   }
 
   if (body.length > maxResponseBytes) {
@@ -160,7 +172,7 @@ export function parseResearchHttpResponse(bytes: Uint8Array, maxResponseBytes: n
   const code = Number(status[1]);
 
   if (code < 100 || code > 599) {
-    throw new ResearchSourceError("source_http_framing_invalid");
+    throw invalidFraming("status_invalid");
   }
 
   if (code < 200) {

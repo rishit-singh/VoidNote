@@ -345,6 +345,9 @@ export async function executionTrace<T>(
         if (error.contentTypeCategory !== undefined) {
           attributes.push(text("voidnote.source_content_type", error.contentTypeCategory));
         }
+        if (error.framingReason !== undefined) {
+          attributes.push(text("voidnote.source_framing_reason", error.framingReason));
+        }
       }
       if (error instanceof WorkspaceError && workspaceErrorCodes.has(error.code)) {
         attributes.push(text("voidnote.error.domain_code", error.code));

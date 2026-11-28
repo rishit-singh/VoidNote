@@ -214,7 +214,17 @@ async function main() {
 
     await page.goto(new URL(href, baseUrl).href);
     await page.getByRole("heading", { name: "Research", exact: true }).waitFor();
-    await page.getByText("Completed", { exact: true }).waitFor({ timeout: 12 * 60_000 });
+    const completed = page.getByText("Completed", { exact: true });
+    const failed = page.getByText("Research stopped before completion", { exact: true });
+    await completed
+      .or(failed)
+      .first()
+      .waitFor({ timeout: 12 * 60_000 });
+    assert.equal(
+      await failed.isVisible(),
+      false,
+      `Research ${runId} failed: ${await page.locator("main").innerText()}`,
+    );
     await page.getByLabel("Result quality: Answered").waitFor();
 
     const answer = page.locator("main").getByText(/Curiosity|Perseverance/);

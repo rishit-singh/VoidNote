@@ -63,6 +63,8 @@ type ResearchAgentState = {
 const interruptedMessage =
   "Research execution was interrupted; its provider outcome is uncertain and will not be replayed.";
 
+const maxPublicationFeedbackCharacters = 500;
+
 const toolDescriptions: Record<ResearchAgentToolName, string> = {
   evidence_lookup:
     "Inspect saved evidence eligible for this run and learn its freshness or reuse status.",
@@ -747,14 +749,16 @@ export class ResearchAgent extends Think<ResearchAgentEnvironment, ResearchAgent
     if (!receipt.published) {
       this.setState({ ...this.state, pendingPublication: null });
       this.#markTool(pending.operationId, "succeeded");
+      const feedback = receipt.feedback?.trim().slice(0, maxPublicationFeedbackCharacters);
 
       return {
         ok: false,
         code: receipt.reason === "invalid-citations" ? "invalid-input" : "unavailable",
         message:
-          receipt.reason === "invalid-citations"
+          feedback ||
+          (receipt.reason === "invalid-citations"
             ? "The report citations did not validate. Repair the cited findings using retrieved evidence, then submit a corrected report."
-            : "The report was rejected. Revise it using evidence already retrieved, or report the limitation.",
+            : "The report was rejected. Revise it using evidence already retrieved, or report the limitation."),
       };
     }
 

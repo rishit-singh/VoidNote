@@ -23,7 +23,12 @@ export type ResearchAgentToolContext = ResearchAgentScope & {
 
 export type ResearchAgentPublication =
   | { published: true; receiptId: string }
-  | { published: false; reason: "invalid-citations" | "rejected" };
+  | {
+      published: false;
+      reason: "invalid-citations" | "rejected";
+      /** Fixed, bounded validation feedback; never include provider or source text. */
+      feedback?: string;
+    };
 
 /**
  * Application-owned ports. Implementations must authorize each operation against

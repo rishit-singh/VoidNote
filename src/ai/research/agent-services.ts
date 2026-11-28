@@ -8,6 +8,8 @@ import type { ResearchAgentRunKey, ResearchAgentServices } from "./agent/service
 import { createResearchAgentEvidenceTools } from "./agent-evidence";
 import { type ResearchRunEnvironment, withResearchRunDatabase } from "./runs/environment";
 
+const MAX_PUBLICATION_FEEDBACK_CHARACTERS = 500;
+
 /** Application authority is re-read for each operation, never inferred from DO state. */
 export function createResearchAgentServices(env: ResearchRunEnvironment): ResearchAgentServices {
   const repository = <T>(
@@ -85,7 +87,11 @@ export function createResearchAgentServices(env: ResearchRunEnvironment): Resear
       const result = await handlers.publish_report(input);
 
       if (!result.ok) {
-        return { published: false, reason: "invalid-citations" };
+        return {
+          published: false,
+          reason: "invalid-citations",
+          feedback: result.message.slice(0, MAX_PUBLICATION_FEEDBACK_CHARACTERS),
+        };
       }
 
       return { published: true, receiptId: operationId };

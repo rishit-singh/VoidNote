@@ -16,7 +16,23 @@ export type ResearchSourceErrorCode =
 export type ResearchSourceErrorMetadata = {
   httpStatus?: number;
   contentTypeCategory?: "expected" | "missing" | "other";
+  framingReason?: ResearchHttpFramingReason;
 };
+
+export type ResearchHttpFramingReason =
+  | "header_terminator_missing"
+  | "header_too_large"
+  | "status_line_invalid"
+  | "header_line_invalid"
+  | "duplicate_framing_header"
+  | "transfer_and_content_length"
+  | "transfer_coding_unsupported"
+  | "chunk_size_invalid"
+  | "chunk_terminator_invalid"
+  | "chunk_trailer_invalid"
+  | "chunked_termination_missing"
+  | "content_length_invalid"
+  | "status_invalid";
 
 const messages: Record<ResearchSourceErrorCode, string> = {
   source_dns_lookup_failed: "Research source DNS lookup failed.",
@@ -39,6 +55,7 @@ export class ResearchSourceError extends Error {
   readonly code: ResearchSourceErrorCode;
   readonly httpStatus?: number;
   readonly contentTypeCategory?: "expected" | "missing" | "other";
+  readonly framingReason?: ResearchHttpFramingReason;
 
   constructor(
     code: ResearchSourceErrorCode,
@@ -65,6 +82,27 @@ export class ResearchSourceError extends Error {
       metadata?.contentTypeCategory === "other"
     ) {
       this.contentTypeCategory = metadata.contentTypeCategory;
+    }
+
+    if (
+      metadata?.framingReason &&
+      [
+        "header_terminator_missing",
+        "header_too_large",
+        "status_line_invalid",
+        "header_line_invalid",
+        "duplicate_framing_header",
+        "transfer_and_content_length",
+        "transfer_coding_unsupported",
+        "chunk_size_invalid",
+        "chunk_terminator_invalid",
+        "chunk_trailer_invalid",
+        "chunked_termination_missing",
+        "content_length_invalid",
+        "status_invalid",
+      ].includes(metadata.framingReason)
+    ) {
+      this.framingReason = metadata.framingReason;
     }
   }
 }

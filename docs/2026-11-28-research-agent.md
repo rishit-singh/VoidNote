@@ -77,7 +77,20 @@ research inference. Persisted Think logs identified strict scope parsing rejecti
 the admission-only `requestId` and `inputTokenBound` fields. The service boundary
 now explicitly selects run identity; its isolated Postgres regression exercises
 real inference admission, budget reservation and rejection of repeated submission.
-This correction is pending staging delivery.
+This correction deployed as `f3285f4` through CI `46167369863`, Worker version
+`c50bf641-c6fc-43f3-8cca-29202eb4b5cd`. The repeated hosted browser journey
+showed the task and executed eight real model steps, but failed without a report.
+All five NASA retrieval attempts emitted `source_http_framing_invalid` in Logfire.
+Two publication attempts were rejected because final reports require explained
+`insufficient-evidence` findings rather than `failed` findings. The service hid
+that validation message behind generic citation feedback. The local repair
+preserves bounded validator feedback; eight native tests and two real Postgres
+service tests pass, including repair and publication without retrieved evidence.
+The new Postgres fixture initially requested unsupported discovery; correcting it
+to a supplied but unretrieved URL made it match this failure scenario.
+Safe framing diagnostics now expose the exact parser rejection branch; hosted
+retrieval is still unresolved. This is not successful research acceptance. At this point settled
+spend was $0.103064 assistant plus $0.014916 research, with no outstanding holds.
 
 The originating conversation also hid the task because it additionally filtered
 by the run's optional note association. The task list now uses conversation scope
@@ -90,7 +103,15 @@ citations, reload, evidence reuse, cancellation, notifications, traces and usage
 must all be demonstrated. Prior hosted NASA retrieval failed at the HTTP-response
 stage; local retrieval success does not resolve that hosted failure.
 
-Firecrawl search uses the existing service-budget ledger. Application credential
-configuration is not yet confirmed; Firecrawl scrape retrieval is not implemented.
+Firecrawl search uses the existing service-budget ledger. The application key is
+installed in staging and authenticated against the read-only credit-usage endpoint
+(99,244 credits remaining at setup). A 200-credit allowance is provisioned using
+the reserved $1, conservatively valued at $0.005 per credit from the highest
+published self-serve pay-as-you-go rate. Search costs 2 credits per ten results;
+the existing per-operation reservation remains 7 credits. No credits were bought.
+Staging discovery activation is configured locally, pending CI delivery.
+Sources: https://www.firecrawl.dev/pricing and
+https://docs.firecrawl.dev/features/search (checked November 28, 2026).
+Firecrawl scrape retrieval is not implemented.
 Direct retrieval is the current page adapter. New testing remains within the
 user's existing $5 authorization, not an expanded allowance.
